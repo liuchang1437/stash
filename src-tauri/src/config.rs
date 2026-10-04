@@ -1,0 +1,67 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Config {
+    pub hotkey: String,
+    /// Empty means the default directory under Documents.
+    pub snippets_dir: String,
+    /// Unpinned clips kept in history.
+    pub history_limit: usize,
+    /// Copies longer than this many characters are not recorded.
+    pub max_clip_chars: usize,
+    /// Executable names whose copies are never recorded (case-insensitive).
+    pub ignored_apps: Vec<String>,
+    /// Put the previous clipboard text back after pasting.
+    pub restore_clipboard: bool,
+    /// Reopening within this many seconds keeps the previous query;
+    /// 0 always starts empty.
+    pub keep_query_seconds: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            hotkey: "Alt+Space".into(),
+            snippets_dir: String::new(),
+            history_limit: 5000,
+            max_clip_chars: 100_000,
+            ignored_apps: ["1Password.exe", "KeePass.exe", "KeePassXC.exe", "Bitwarden.exe"]
+                .map(String::from)
+                .to_vec(),
+            restore_clipboard: true,
+            keep_query_seconds: 60,
+        }
+    }
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Self {
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, serde_json::to_string_pretty(self)?)
+    }
+
+    pub fn snippets_path(&self, default: &Path) -> PathBuf {
+        if self.snippets_dir.trim().is_empty() {
+            default.to_path_buf()
+        } else {
+            PathBuf::from(self.snippets_dir.trim())
+        }
+    }
+
+    pub fn is_ignored(&self, app: Option<&str>) -> bool {
+        app.is_some_and(|app| self.ignored_apps.iter().any(|i| i.eq_ignore_ascii_case(app)))
+    }
+}
