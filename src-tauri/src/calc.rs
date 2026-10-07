@@ -26,6 +26,7 @@ fn normalize(c: char) -> char {
         '＾' => '^',
         '！' => '!',
         '。' => '.',
+        '，' => ',',
         c if ('０'..='９').contains(&c) => char::from_u32(c as u32 - '０' as u32 + '0' as u32).unwrap_or(c),
         c => c,
     }
@@ -41,8 +42,17 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
             i += 1;
         } else if c.is_ascii_digit() || (c == '.' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {
             let start = i;
-            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == '_') {
+            while i < chars.len()
+                && (chars[i].is_ascii_digit()
+                    || chars[i] == '.'
+                    || chars[i] == '_'
+                    || (chars[i] == ',' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit())))
+            {
                 i += 1;
+            }
+            let mantissa: String = chars[start..i].iter().collect();
+            if !valid_grouping(&mantissa) {
+                return None;
             }
             // Scientific notation: 1e3, 2.5e-4 (but not `2e` = 2*e).
             if i < chars.len() && (chars[i] == 'e' || chars[i] == 'E') {
@@ -57,7 +67,10 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
                     i = j;
                 }
             }
-            let text: String = chars[start..i].iter().filter(|c| **c != '_').collect();
+            let text: String = chars[start..i]
+                .iter()
+                .filter(|c| **c != '_' && **c != ',')
+                .collect();
             tokens.push(Token::Num(text.parse().ok()?));
         } else if c.is_alphabetic() || c == 'π' {
             let start = i;
@@ -76,6 +89,25 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
         }
     }
     Some(tokens)
+}
+
+/// Thousands separators are only accepted in their standard places: the
+/// integer part split into a leading group of 1–3 digits followed by groups
+/// of exactly 3 (`1,234,567.89`). Anything else, e.g. `1,23` or `1.2,345`,
+/// is rejected rather than silently read as a different number.
+fn valid_grouping(mantissa: &str) -> bool {
+    if !mantissa.contains(',') {
+        return true;
+    }
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if frac.contains(',') {
+        return false;
+    }
+    let mut groups = int.split(',');
+    let first_ok = groups
+        .next()
+        .is_some_and(|g| (1..=3).contains(&g.len()) && g.bytes().all(|b| b.is_ascii_digit()));
+    first_ok && groups.all(|g| g.len() == 3 && g.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn constant(name: &str) -> Option<f64> {
@@ -349,7 +381,11 @@ pub fn format(value: f64) -> String {
             None => s,
         };
     }
-    trim_decimals(&format!("{value:.10}"))
+    // f64 carries ~15–16 significant digits; printing beyond that exposes
+    // binary rounding noise (12345678.9 * 2 = 24691357.800000001).
+    let int_digits = if abs < 1.0 { 0 } else { abs.log10().floor() as i32 + 1 };
+    let decimals = (15 - int_digits).clamp(0, 10) as usize;
+    trim_decimals(&format!("{value:.decimals$}"))
 }
 
 fn trim_decimals(s: &str) -> String {
@@ -427,6 +463,24 @@ mod tests {
     }
 
     #[test]
+    fn thousands_separators() {
+        assert_eq!(calc("1,234+5").as_deref(), Some("1239"));
+        assert_eq!(calc("12,345,678.9*2").as_deref(), Some("24691357.8"));
+        assert_eq!(calc("1,000 / 8").as_deref(), Some("125"));
+        assert_eq!(calc("-1,500+500").as_deref(), Some("-1000"));
+        assert_eq!(calc("2*1,000e3").as_deref(), Some("2000000"));
+        assert_eq!(calc("１，２３４＋１").as_deref(), Some("1235"));
+        assert_eq!(calc("sqrt(1,000,000)").as_deref(), Some("1000"));
+    }
+
+    #[test]
+    fn rejects_misplaced_separators() {
+        for q in ["1,23+1", "1234,567+1", "1,2345+1", "1.234,5+1", "1,,234+1", "1,+2", ",5+1", "1_000,000+1"] {
+            assert_eq!(calc(q), None, "{q}");
+        }
+    }
+
+    #[test]
     fn ignores_plain_searches() {
         for q in ["", "e", "pi", "2024", "-5", "hello", "git log", "a-b", "1/0", "sqrt(-1)", "(", "3 +"] {
             assert_eq!(calc(q), None, "{q}");
@@ -438,5 +492,9 @@ mod tests {
         assert_eq!(format(1e20), "1e20");
         assert_eq!(format(1.5e-12), "1.5e-12");
         assert_eq!(format(-0.0), "0");
+        assert_eq!(format(12345678.9 * 2.0), "24691357.8");
+        assert_eq!(format(0.1 * 3.0), "0.3");
+        assert_eq!(format(123456789012345.6), "123456789012346");
+        assert_eq!(format(1.0 / 3.0), "0.3333333333");
     }
 }
