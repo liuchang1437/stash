@@ -34,3 +34,35 @@ pub fn activate_window(_hwnd: WindowHandle) {}
 pub fn send_paste() {}
 
 pub fn send_left(_count: usize) {}
+
+pub fn send_right(_count: usize) {}
+
+pub fn send_shift_left(_count: usize) {}
+
+pub fn send_backspace(_count: usize) {}
+
+pub fn mask_menu_key() {}
+
+pub fn alt_down() -> bool {
+    false
+}
+
+pub fn caret_rect(_hwnd: WindowHandle) -> Option<super::Rect> {
+    None
+}
+
+pub fn work_area(_x: i32, _y: i32) -> Option<super::Rect> {
+    None
+}
+
+pub fn set_bounds(_hwnd: WindowHandle, _x: i32, _y: i32, _width: i32, _height: i32) -> bool {
+    false
+}
+
+pub fn make_non_activating(_hwnd: WindowHandle) {}
+
+pub fn show_without_focus(_hwnd: WindowHandle) {}
+
+pub fn hide_window(_hwnd: WindowHandle) {}
+
+pub fn ime_to_english(_hwnd: WindowHandle) {}

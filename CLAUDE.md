@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Stash (随手) is a Windows tray app built with Tauri 2 (Rust) and SvelteKit/Svelte 5 in SPA mode. Alt+Space opens a launcher that searches clipboard history and Markdown snippets together, evaluates calculator expressions, and pastes the chosen result back into the previously focused window. All UI text and the README are written in Chinese.
+Stash (随手) is a Windows tray app built with Tauri 2 (Rust) and SvelteKit/Svelte 5 in SPA mode. Alt+Space opens a popover in the upper middle of the screen (or, with `followCaret`, at the text caret of the focused app) that searches clipboard history and Markdown snippets together, evaluates calculator expressions, and pastes the chosen result back into that app. All UI text and the README are written in Chinese. The UI uses a dark, monospace "terminal" theme (`src/app.css`).
 
 ## Commands
 
@@ -19,6 +19,7 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 
 - Stop any running `stash.exe` before you run `cargo test` or `cargo build`. Windows locks the executable, so the build fails while the app is running.
 - There are no frontend tests. Rust tests live in `#[cfg(test)]` modules at the bottom of each source file.
+- Without Windows you can still type-check the Windows code: `RUSTC_BOOTSTRAP=1 cargo check -Zbuild-std=std,panic_abort --target x86_64-pc-windows-msvc` (needs the `rust-src` component; set `CC_x86_64_pc_windows_msvc`/`AR_x86_64_pc_windows_msvc` to a no-op script so the bundled SQLite C code is skipped).
 
 ## Architecture
 
@@ -30,7 +31,8 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 
 **Activation is two-phase.** `activate(key, mode, values)` with `mode` ∈ `paste | copy | open`:
 - If a snippet has input variables and no `values` were passed, it returns `NeedsInput { fields }`.
-- The UI then shows `FillForm` and calls `activate` again with the values.
+- The popover then expands the fields inline under the selected row and calls `activate` again with the values. While the user types, `preview_snippet` returns the rendered text as `Segment`s (`template::render_segments`) so the UI can mark each variable.
+- `activate_text(key, text, mode)` pastes text the UI derived from an item (calculator formats, "paste as…" transformations in `src/lib/kinds.ts`); `key` only records usage.
 - Usage stats are recorded only after the action succeeds.
 
 **Paste flow** (`commands::deliver`, runs on a spawned thread):
@@ -38,7 +40,8 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 2. Re-activate the window that was in front before the launcher opened (`prev_window`). This must happen *before* hiding the launcher, while Stash still owns the foreground.
 3. Hide the launcher.
 4. Send Ctrl+V, then press ← as many times as needed to land on `{{cursor}}`.
-5. Optionally restore the previous clipboard text after 500 ms.
+5. Hand over to `yank::after_paste`, which shows the post-paste chip (see below).
+6. Optionally restore the previous clipboard text after 500 ms.
 
 **Stash's own clipboard writes are invisible to its own listener.** `platform::write_clipboard_text` adds the `ExcludeClipboardContentFromMonitorProcessing` and `CanIncludeInClipboardHistory=0` formats, and the WM_CLIPBOARDUPDATE listener skips content carrying those formats. That listener is a message-only window on its own thread. Do not record pasted text through some other path.
 
@@ -50,8 +53,19 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 
 **Calculator** (`calc.rs`): a hand-written recursive-descent parser. A query counts as a calculation only when it contains a binary or postfix operator, a function call, or implicit multiplication, so ordinary searches like `e` or `2024` never show a result. `%` is modulo (`rem_euclid`). `$N` references are substituted as text before parsing (`substitute_clips`).
 
-**Window and UI state.** There is one undecorated window labeled `main`. `src/routes/+page.svelte` switches between the views `search | fill | edit | settings`. Blur hides the window only in `search` and `fill`. `show_launcher` emits `launcher-shown` with a boolean payload `keepQuery`, which is true when the window is reopened within `config.keepQuerySeconds` of the last `hide_launcher`. The launcher then calls `resume()` (keep the query and select it) instead of `reset()`. Every hide must go through `hide_launcher` so that `hidden_at` is recorded.
+**Windows.** Three windows load the same page; `src/routes/+page.svelte` picks the UI by window label. They are `"create": false` in `tauri.conf.json` and built in `setup` *after* `app.manage(AppState)`. Tauri would otherwise create them before `setup` runs, and in the release build the page loads fast enough to invoke a command before the state exists (panic → instant exit, since release uses `panic = "abort"`).
+- `main` — the popover (`Popover.svelte`). Transparent and undecorated; the cards draw their own shadow inside a `MARGIN` border. Blur hides it. Every hide must go through `hide_launcher` so that `hidden_at` is recorded.
+- `chip` — the post-paste strip (`Chip.svelte`). `platform::make_non_activating` turns it into a frameless `WS_POPUP` tool window with `WS_EX_NOACTIVATE` at startup (otherwise Windows draws its hidden caption as a "Stash ×" bar), and it is shown with `platform::show_without_focus`, so the target app keeps the keyboard. Never call `window.show()` / `window.hide()` on it on Windows: Tauri does not know it is visible, so its `hide()` is a no-op. Hide it with `platform::hide_window` (`yank::hide_chip`).
+- `manage` — an undecorated window for settings and the snippet editor (`Manage.svelte`); the views' headers are `data-tauri-drag-region` and carry a `CloseButton`. Opened with `open_manage`; the UI also reads the last request with `manage_request` because it may load after the event was sent.
 
-**Platform layer.** `src-tauri/src/platform/` exposes the same free functions per OS, chosen with `cfg` (only `windows.rs` is real, using `windows-sys` 0.61). Keep Win32 code out of the other modules.
+Events are sent with `emit_to(label, …)` and listened to with `getCurrentWebviewWindow().listen`, so each window only sees its own.
+
+**Popover placement** (`placement.rs`, `show_launcher`). By default `center_anchor` puts the window in the upper middle of the monitor under the mouse (`Anchor::centered`), centering the card plus the auto-opened preview. With `config.followCaret`, `find_anchor` asks `platform::caret_rect` for the caret of the target window instead (Win32 caret → MSAA `OBJID_CARET` → UIA `TextPattern2` caret range, or `TextPattern` selection for providers like Windows Terminal; the COM part runs on a worker thread with a 250 ms timeout) and falls back to the mouse pointer. The anchor and the monitor's work area are stored in `AppState::anchor`. The chip has its own `AppState::chip_anchor`, looked up at paste time by `caret_anchor` in the pasted-into window. `launcher-shown` carries `{ keepQuery, anchor, space, targetApp, autoPeek }`; `space` (free room around the anchor, logical px) lets the UI decide to open upwards (`flip`). `keepQuery` is true when the window is reopened within `config.keepQuerySeconds` of the last `hide_launcher`; the popover then calls `resume()` instead of `reset()`.
+
+**Panel layout inside the popover** (`src/lib/layout.ts`, `placePanels`). Panels never push each other around. The card stays fixed, the preview sits beside it (`sideFor`), and the action menu takes the first slot that fits: past the preview in its column, then beyond the preview, then the card's other side, overlaying the preview only as a last resort. Every panel is positioned absolutely from these coordinates; each is drawn hidden until it has been measured. The submenu is absolutely placed beside the main menu (`ActionMenu.svelte`), so it never resizes the menu either. The popover reports the bounding box with `place_popover({ width, height, cardX, margin, flip })`. `Anchor::place` pins the window to the anchor by its top edge (or bottom edge when `flip`) and horizontally by `cardX`. So keep the rule: nothing may start above the card when opening down, or end below it when opening up, otherwise the card moves.
+
+**Swap after paste** (`yank.rs`). `after_paste` records `LastPaste` (target window, the pasted text plus earlier clips as choices) and shows the chip for a few seconds. The swap hotkey (`config.swapHotkey`, default Alt+V) is registered only while the chip is visible; the global-shortcut handler routes it via `is_swap_hotkey`. That handler hands every press to a new thread. The plugin invokes it while holding its shortcut-table lock, and `register`/`unregister` take that same lock, so calling either inside the callback (e.g. `show_launcher` → `hide_chip` dropping Alt+V) deadlocks the main thread. Each press taps an unassigned key (`mask_menu_key`, so releasing Alt does not open the target's menu bar) and advances `pending`; a thread waits for Alt to be released and then erases the current text (Shift+← to select, or Backspace in terminals — see `TERMINALS`) and pastes the chosen one. Terminals only get single-line choices; texts over 2000 characters are never erased.
+
+**Platform layer.** `src-tauri/src/platform/` exposes the same free functions per OS, chosen with `cfg` (only `windows.rs` is real, using `windows-sys` 0.61, plus the `windows` crate for the MSAA/UIA COM interfaces). Keep Win32 code out of the other modules.
 
 **Data locations.** The config and `stash.db` are in `%APPDATA%\io.github.liuchang1437.stash\`. Snippets default to `Documents\Stash Snippets`. `migrate.rs` moves data from the project's former name "Box" (`com.box.app`, `box.db`, `Box Snippets`) on first start, and only when the new location does not exist yet.

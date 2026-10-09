@@ -10,11 +10,12 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::calc;
 use crate::config::Config;
+use crate::placement::Layout;
 use crate::search::{Hit, ItemRef};
-use crate::template::{self, Field, Part};
+use crate::template::{self, Field, Part, Segment};
 use crate::{
-    hide_launcher, now, platform, register_hotkey, reload_snippets, snippets, watch_snippets,
-    AppState,
+    hide_launcher, now, platform, register_hotkey, reload_snippets, snippets, watch_snippets, yank,
+    AppState, ManageRequest, MANAGE_WINDOW,
 };
 
 type CmdResult<T> = Result<T, String>;
@@ -84,16 +85,7 @@ pub fn activate(
                 if !fields.is_empty() && values.is_none() {
                     return Ok(Activation::NeedsInput { title, fields });
                 }
-                let clipboard = if parts.contains(&Part::Clipboard) {
-                    platform::read_clipboard_text().unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                let history = state
-                    .index
-                    .read()
-                    .unwrap()
-                    .recent_clips(template::history_depth(&parts));
+                let (clipboard, history) = template_inputs(&state, &parts);
                 let rendered = template::render(
                     &parts,
                     &values.unwrap_or_default(),
@@ -117,6 +109,21 @@ pub fn activate(
     }
     record_use(&state, &item)?;
     Ok(Activation::Done)
+}
+
+/// Clipboard text and history entries a template refers to.
+fn template_inputs(state: &AppState, parts: &[Part]) -> (String, Vec<String>) {
+    let clipboard = if parts.contains(&Part::Clipboard) {
+        platform::read_clipboard_text().unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let history = state
+        .index
+        .read()
+        .unwrap()
+        .recent_clips(template::history_depth(parts));
+    (clipboard, history)
 }
 
 fn record_use(state: &AppState, item: &ItemRef) -> CmdResult<()> {
@@ -174,6 +181,7 @@ fn deliver(app: &AppHandle, text: String, cursor_back: usize, paste: bool) {
             thread::sleep(Duration::from_millis(30));
             platform::send_left(cursor_back);
         }
+        yank::after_paste(&app, target, text, cursor_back, original.clone());
         if let Some(original) = original {
             // Give the target app time to read the clipboard first.
             thread::sleep(Duration::from_millis(500));
@@ -267,6 +275,15 @@ pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
 pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Settings) -> CmdResult<()> {
     let mut new = settings.config;
     new.hotkey = new.hotkey.trim().to_string();
+    new.swap_hotkey = new.swap_hotkey.trim().to_string();
+    if !new.swap_hotkey.is_empty() {
+        if new.swap_hotkey.eq_ignore_ascii_case(&new.hotkey) {
+            return Err("「换一条」快捷键不能和唤起快捷键相同".into());
+        }
+        new.swap_hotkey
+            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+            .map_err(|e| format!("无法识别快捷键 “{}”：{e}", new.swap_hotkey))?;
+    }
     new.history_limit = new.history_limit.max(10);
     let old = state.config.read().unwrap().clone();
 
@@ -316,9 +333,213 @@ pub fn open_snippets_dir(app: AppHandle, state: State<'_, AppState>) -> CmdResul
         .map_err(err)
 }
 
+#[tauri::command]
+pub fn place_popover(app: AppHandle, layout: Layout) {
+    crate::place_popover(&app, &layout);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalcRef {
+    n: usize,
+    value: String,
+    source: Option<String>,
+    last_used_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalcDetail {
+    result: String,
+    expression: String,
+    refs: Vec<CalcRef>,
+}
+
+/// `$N` numbers mentioned in a query, in order, without duplicates.
+fn clip_refs(query: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut chars = query.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '$' && c != '＄' {
+            continue;
+        }
+        let mut digits = String::new();
+        while let Some(d) = chars.peek().filter(|d| d.is_ascii_digit()) {
+            digits.push(*d);
+            chars.next();
+        }
+        if let Ok(n) = digits.parse::<usize>() {
+            if n > 0 && !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
+/// The calculation for a query plus where each `$N` came from.
+#[tauri::command]
+pub fn calc_detail(state: State<'_, AppState>, query: String) -> Option<CalcDetail> {
+    let index = state.index.read().unwrap();
+    let refs = clip_refs(&query);
+    let depth = refs.iter().copied().max().unwrap_or(0);
+    let recent = index.recent_entries(depth);
+    let clip = |n: usize| recent.get(n - 1).map(|e| e.body.clone());
+    let calculation = calc::calculate(&query, clip)?;
+    let refs = refs
+        .into_iter()
+        .filter_map(|n| {
+            let e = recent.get(n - 1)?;
+            Some(CalcRef {
+                n,
+                value: e.body.trim().chars().take(80).collect(),
+                source: e.source.clone(),
+                last_used_at: e.last_used_at,
+            })
+        })
+        .collect();
+    Some(CalcDetail {
+        result: calculation.result,
+        expression: calculation.expression,
+        refs,
+    })
+}
+
+/// Rendered snippet split into pieces, so the UI can mark which part comes
+/// from which variable while the user fills them in.
+#[tauri::command]
+pub fn preview_snippet(
+    state: State<'_, AppState>,
+    key: String,
+    values: HashMap<String, String>,
+) -> CmdResult<Vec<Segment>> {
+    let item = parse_key(&key)?;
+    let body = state
+        .index
+        .read()
+        .unwrap()
+        .get(&item)
+        .map(|e| e.body.clone())
+        .ok_or("条目不存在")?;
+    let parts = template::parse(&body);
+    let (clipboard, history) = template_inputs(&state, &parts);
+    Ok(template::render_segments(
+        &parts, &values, &clipboard, &history,
+    ))
+}
+
+/// Pastes, copies or opens text the UI derived from an item (a reformatted
+/// calculation, a quoted address, a table as Markdown…). `key`, when given,
+/// is the item it came from and gets its use recorded.
+#[tauri::command]
+pub fn activate_text(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: Option<String>,
+    text: String,
+    mode: Mode,
+) -> CmdResult<()> {
+    if mode == Mode::Open {
+        let url = as_web_url(&text).ok_or("内容不是网址，无法用浏览器打开")?;
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| format!("打开浏览器失败：{e}"))?;
+        hide_launcher(&app);
+    } else {
+        deliver(&app, text, 0, mode == Mode::Paste);
+    }
+    if let Some(key) = key {
+        record_use(&state, &parse_key(&key)?)?;
+    }
+    Ok(())
+}
+
+/// Solscan page for a Solana address (32–44 base58 characters) or
+/// transaction signature (64–88).
+fn solana_explorer_url(text: &str) -> Option<String> {
+    const BASE58: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let text = text.trim();
+    if !text.chars().all(|c| BASE58.contains(c)) {
+        return None;
+    }
+    match text.len() {
+        32..=44 => Some(format!("https://solscan.io/account/{text}")),
+        64..=88 => Some(format!("https://solscan.io/tx/{text}")),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub fn open_explorer(app: AppHandle, state: State<'_, AppState>, key: String) -> CmdResult<()> {
+    let item = parse_key(&key)?;
+    let body = state
+        .index
+        .read()
+        .unwrap()
+        .get(&item)
+        .map(|e| e.body.clone())
+        .ok_or("条目不存在")?;
+    let url = solana_explorer_url(&body).ok_or("不是 Solana 地址或交易签名")?;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("打开浏览器失败：{e}"))?;
+    hide_launcher(&app);
+    record_use(&state, &item)
+}
+
+#[tauri::command]
+pub fn open_manage(app: AppHandle, view: String, key: Option<String>, body: Option<String>) {
+    crate::open_manage(&app, ManageRequest { view, key, body });
+}
+
+#[tauri::command]
+pub fn manage_request(state: State<'_, AppState>) -> Option<ManageRequest> {
+    state.manage_request.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn close_manage(app: AppHandle) {
+    if let Some(window) = app.get_webview_window(MANAGE_WINDOW) {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
+pub fn chip_swap(app: AppHandle) {
+    // Off the IPC thread: swapping sleeps between key strokes.
+    thread::spawn(move || yank::swap_now(&app));
+}
+
+#[tauri::command]
+pub fn chip_undo(app: AppHandle) {
+    thread::spawn(move || yank::undo(&app));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_clip_refs() {
+        assert_eq!(clip_refs("$1 + $12 * $1 - ＄3"), [1, 12, 3]);
+        assert!(clip_refs("$ 1 + $0").is_empty());
+    }
+
+    #[test]
+    fn builds_solscan_urls() {
+        let address = "3wCvYmrYvcLDhJF4B4EZkCfYXXx9us8XabcdefghijkL";
+        assert_eq!(
+            solana_explorer_url(address).as_deref(),
+            Some("https://solscan.io/account/3wCvYmrYvcLDhJF4B4EZkCfYXXx9us8XabcdefghijkL")
+        );
+        let signature = "5".repeat(87);
+        assert!(solana_explorer_url(&signature).unwrap().contains("/tx/"));
+        assert_eq!(
+            solana_explorer_url("0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl"),
+            None
+        );
+        assert_eq!(solana_explorer_url("short"), None);
+    }
 
     #[test]
     fn recognizes_web_urls() {

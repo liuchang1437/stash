@@ -247,13 +247,22 @@ impl Index {
     /// Texts of the `n` most recently copied or used clips, newest first.
     /// Pinning does not affect this order.
     pub fn recent_clips(&self, n: usize) -> Vec<String> {
+        self.recent_entries(n)
+            .into_iter()
+            .map(|e| e.body.clone())
+            .collect()
+    }
+
+    /// The `n` most recently copied or used clips, newest first.
+    pub fn recent_entries(&self, n: usize) -> Vec<&Entry> {
         let mut clips: Vec<&Entry> = self.clips.iter().collect();
         clips.sort_by(|a, b| {
             b.last_used_at
                 .cmp(&a.last_used_at)
                 .then(clip_id(b).cmp(&clip_id(a)))
         });
-        clips.into_iter().take(n).map(|e| e.body.clone()).collect()
+        clips.truncate(n);
+        clips
     }
 
     pub fn query(&self, query: &str, now: i64, limit: usize) -> Vec<Hit> {
