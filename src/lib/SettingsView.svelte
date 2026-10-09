@@ -136,6 +136,11 @@
         <span>打开时自动展开预览（关闭后按 → 展开）</span>
       </label>
 
+      <label class="check">
+        <input type="checkbox" bind:checked={settings.config.englishInput} />
+        <span>打开时切换到英文输入（搜索支持拼音，按 Shift 可切回中文）</span>
+      </label>
+
       <label>
         <span>粘贴后「换一条」快捷键</span>
         <input

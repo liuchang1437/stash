@@ -39,6 +39,7 @@ export type Config = {
   keepQuerySeconds: number;
   followCaret: boolean;
   autoPeek: boolean;
+  englishInput: boolean;
   swapHotkey: string;
 };
 

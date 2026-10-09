@@ -26,6 +26,9 @@ pub struct Config {
     /// Show the preview panel next to the list as soon as the popover opens,
     /// instead of only after → is pressed.
     pub auto_peek: bool,
+    /// Switch the popover's input method to English when it opens; search
+    /// matches pinyin anyway, and Shift switches back.
+    pub english_input: bool,
     /// Hotkey that swaps the text just pasted for an earlier clip while the
     /// post-paste chip is visible. Empty disables swapping.
     pub swap_hotkey: String,
@@ -45,6 +48,7 @@ impl Default for Config {
             keep_query_seconds: 60,
             follow_caret: false,
             auto_peek: true,
+            english_input: true,
             swap_hotkey: "Alt+V".into(),
         }
     }

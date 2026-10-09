@@ -24,6 +24,7 @@ use windows_sys::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
     QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows_sys::Win32::UI::Input::Ime::{ImmGetDefaultIMEWnd, IMC_SETCONVERSIONMODE};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
     VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_LEFT, VK_MENU, VK_RIGHT, VK_SHIFT, VK_V,
@@ -31,10 +32,11 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetGUIThreadInfo,
     GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
-    RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    TranslateMessage, GUITHREADINFO, GWL_EXSTYLE, GWL_STYLE, HWND_MESSAGE, HWND_TOPMOST, MSG,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE,
-    SW_SHOWNOACTIVATE, WM_CLIPBOARDUPDATE, WNDCLASSW, WS_CAPTION, WS_EX_NOACTIVATE,
+    RegisterClassW, SendMessageTimeoutW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, TranslateMessage, GUITHREADINFO, GWL_EXSTYLE, GWL_STYLE, HWND_MESSAGE,
+    HWND_TOPMOST, MSG, SMTO_ABORTIFHUNG, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CLIPBOARDUPDATE,
+    WM_IME_CONTROL, WNDCLASSW, WS_CAPTION, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
@@ -665,6 +667,39 @@ pub fn make_non_activating(hwnd: WindowHandle) {
             0,
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// Switches the input method of the control that has the keyboard focus in
+/// `hwnd`'s thread to English (alphanumeric) mode. In a WebView the focus is
+/// a child window of the WebView2 process, so the request goes to that
+/// child's IME window. Microsoft Pinyin, Sogou, WeChat and other IMM-aware
+/// IMEs honour it; Shift switches back to Chinese as usual.
+pub fn ime_to_english(hwnd: WindowHandle) {
+    if hwnd == 0 {
+        return;
+    }
+    unsafe {
+        let focus = gui_thread_info(hwnd as HWND)
+            .map(|i| i.hwndFocus)
+            .filter(|h| !h.is_null())
+            .unwrap_or(hwnd as HWND);
+        let ime = ImmGetDefaultIMEWnd(focus);
+        if ime.is_null() {
+            return;
+        }
+        // Conversion mode 0 = alphanumeric. Time-limited: the IME window
+        // lives in another process and must not be able to hang us.
+        let mut result = 0usize;
+        SendMessageTimeoutW(
+            ime,
+            WM_IME_CONTROL,
+            IMC_SETCONVERSIONMODE as WPARAM,
+            0,
+            SMTO_ABORTIFHUNG,
+            200,
+            &mut result,
         );
     }
 }

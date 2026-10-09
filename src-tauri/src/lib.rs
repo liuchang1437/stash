@@ -140,9 +140,9 @@ fn show_launcher(app: &AppHandle) {
             .is_some_and(|t| t.elapsed() < keep_for)
     };
 
-    let (follow_caret, auto_peek) = {
+    let (follow_caret, auto_peek, english_input) = {
         let config = state.config.read().unwrap();
-        (config.follow_caret, config.auto_peek)
+        (config.follow_caret, config.auto_peek, config.english_input)
     };
     // By default the popover opens in the upper middle of the screen, like a
     // launcher; with `follow_caret` it opens at the caret instead. (The
@@ -167,6 +167,15 @@ fn show_launcher(app: &AppHandle) {
 
     let _ = window.show();
     let _ = window.set_focus();
+    if english_input {
+        // The WebView's focused child window only gets the keyboard a
+        // moment after the window does; switch its IME once it has.
+        let hwnd = native_handle(&window);
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(80));
+            platform::ime_to_english(hwnd);
+        });
+    }
     let _ = app.emit_to(
         MAIN_WINDOW,
         "launcher-shown",

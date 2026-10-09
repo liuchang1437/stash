@@ -64,3 +64,5 @@ pub fn make_non_activating(_hwnd: WindowHandle) {}
 pub fn show_without_focus(_hwnd: WindowHandle) {}
 
 pub fn hide_window(_hwnd: WindowHandle) {}
+
+pub fn ime_to_english(_hwnd: WindowHandle) {}
