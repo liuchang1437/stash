@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Stash",
         "width": 480,
         "height": 360,
@@ -26,6 +27,7 @@
       },
       {
         "label": "chip",
+        "create": false,
         "title": "Stash",
         "url": "index.html",
         "width": 560,
@@ -41,6 +43,7 @@
       },
       {
         "label": "manage",
+        "create": false,
         "title": "Stash",
         "url": "index.html",
         "width": 760,

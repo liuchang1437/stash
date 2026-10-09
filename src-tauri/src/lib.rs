@@ -552,7 +552,14 @@ pub fn run() {
                 manage_request: Mutex::new(None),
             });
 
+            // The windows are `"create": false` in tauri.conf.json and built
+            // only now: Tauri would otherwise create them before this hook
+            // runs, and a page that loads fast (the release build) calls
+            // commands needing AppState before it is managed, which panics.
             let handle = app.handle();
+            for config in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(handle, config)?.build()?;
+            }
             if let Some(chip) = handle.get_webview_window(CHIP_WINDOW) {
                 platform::make_non_activating(native_handle(&chip));
             }
