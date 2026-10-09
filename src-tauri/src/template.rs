@@ -193,6 +193,45 @@ pub fn render(
     Rendered { text, cursor_back }
 }
 
+/// A piece of rendered text; `field` names the variable it came from.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Segment {
+    pub text: String,
+    pub field: Option<String>,
+}
+
+/// Like `render` (without URL encoding), but keeps variable values apart
+/// from the surrounding text for a live preview. `{{cursor}}` becomes an
+/// empty segment with the field name `cursor`.
+pub fn render_segments(
+    parts: &[Part],
+    values: &HashMap<String, String>,
+    clipboard: &str,
+    history: &[String],
+) -> Vec<Segment> {
+    let now = chrono::Local::now();
+    let mut out: Vec<Segment> = Vec::new();
+    let mut push = |text: String, field: Option<String>| match out.last_mut() {
+        Some(last) if field.is_none() && last.field.is_none() => last.text.push_str(&text),
+        _ => out.push(Segment { text, field }),
+    };
+    for part in parts {
+        match part {
+            Part::Text(t) => push(t.clone(), None),
+            Part::Date(f) => push(now.format(&to_strftime(f)).to_string(), None),
+            Part::Clipboard => push(clipboard.to_string(), None),
+            Part::ClipHistory(n) => push(history.get(n - 1).cloned().unwrap_or_default(), None),
+            Part::Uuid => push(uuid::Uuid::new_v4().to_string(), None),
+            Part::Cursor => push(String::new(), Some("cursor".into())),
+            Part::Input(field) => {
+                let value = values.get(&field.name).unwrap_or(&field.default);
+                push(value.clone(), Some(field.name.clone()));
+            }
+        }
+    }
+    out
+}
+
 /// Percent-encodes everything except RFC 3986 unreserved characters.
 fn percent_encode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
@@ -293,6 +332,28 @@ mod tests {
         let history = ["C", "B", "A"].map(String::from);
         let r = render(&parts, &HashMap::new(), "now", &history, false);
         assert_eq!(r.text, "A-B-C-|now");
+    }
+
+    #[test]
+    fn segments_mark_variables() {
+        let parts = parse("rg '{{reason:a|b}}' {{file=x.log}}{{cursor}}");
+        let mut values = HashMap::new();
+        values.insert("reason".to_string(), "b".to_string());
+        let segs = render_segments(&parts, &values, "", &[]);
+        let shape: Vec<(&str, Option<&str>)> = segs
+            .iter()
+            .map(|s| (s.text.as_str(), s.field.as_deref()))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("rg '", None),
+                ("b", Some("reason")),
+                ("' ", None),
+                ("x.log", Some("file")),
+                ("", Some("cursor")),
+            ]
+        );
     }
 
     #[test]

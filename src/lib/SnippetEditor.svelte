@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type Snippet } from "./api";
+  import CloseButton from "./CloseButton.svelte";
 
   type Props = {
     snippet: Snippet | null;
@@ -49,7 +50,8 @@
 <svelte:window {onkeydown} />
 
 <div class="editor">
-  <header>
+  <!-- The window has no title bar: the header's empty space drags it. -->
+  <header data-tauri-drag-region>
     <input
       bind:this={titleInput}
       bind:value={title}
@@ -58,6 +60,7 @@
       spellcheck="false"
     />
     <input bind:value={tags} class="field tags" placeholder="标签，用逗号分隔" spellcheck="false" />
+    <CloseButton onClose={onDone} />
   </header>
 
   <textarea bind:value={body} spellcheck="false" placeholder="内容"></textarea>
@@ -125,7 +128,7 @@
     outline: none;
     padding: 12px 16px;
     background: var(--bg);
-    font-family: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+    font-family: var(--mono);
     font-size: 13px;
     line-height: 1.5;
   }
@@ -151,7 +154,7 @@
     border-radius: 4px;
     background: var(--kbd-bg);
     color: var(--text);
-    font-family: "Cascadia Mono", Consolas, monospace;
+    font-family: var(--mono);
   }
 
   footer {

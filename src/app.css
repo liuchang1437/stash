@@ -1,33 +1,31 @@
+/* Terminal theme: dark, monospace, amber accent. */
 :root {
-  --bg: #ffffff;
-  --bg-subtle: #f5f5f7;
-  --bg-selected: #e8f0fe;
-  --border: #e3e3e8;
-  --text: #1d1d1f;
-  --text-muted: #6e6e73;
-  --accent: #2563eb;
-  --accent-text: #ffffff;
-  --danger: #dc2626;
-  --snippet: #7c3aed;
-  --kbd-bg: #ececf0;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1e1e20;
-    --bg-subtle: #262629;
-    --bg-selected: #1e3a6b;
-    --border: #36363a;
-    --text: #ececf0;
-    --text-muted: #9a9aa2;
-    --accent: #4f8cff;
-    --accent-text: #ffffff;
-    --danger: #f87171;
-    --snippet: #a78bfa;
-    --kbd-bg: #34343a;
-    color-scheme: dark;
-  }
+  --bg: #0d0f12;
+  --bg-subtle: #12151a;
+  --bg-raised: #171b21;
+  --bg-selected: rgba(245, 165, 36, 0.12);
+  --border: #262c35;
+  --border-soft: #1c2129;
+  --text: #d7dde5;
+  --text-muted: #8a94a1;
+  --text-faint: #5a636e;
+  --accent: #f5a524;
+  --accent-text: #0d0f12;
+  --accent-soft: #ffd38a;
+  --green: #3fd17a;
+  --blue: #6cb6ff;
+  --violet: #b9a3ff;
+  --danger: #ff7b72;
+  --snippet: #b9a3ff;
+  --mark: rgba(245, 165, 36, 0.28);
+  --kbd-bg: #222831;
+  /* The popover is a transparent window with a 20px margin around its
+     cards (MARGIN in Popover.svelte); a shadow reaching past that is cut off
+     at the window edge as a hard grey box. Keep offset + blur <= 20px. */
+  --shadow: 0 6px 14px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --mono: "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI", monospace;
+  --sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  color-scheme: dark;
 }
 
 * {
@@ -39,12 +37,23 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
   user-select: none;
+}
+
+/* The popover and the chip are transparent windows: only their cards paint. */
+html[data-window="main"],
+html[data-window="main"] body,
+html[data-window="chip"],
+html[data-window="chip"] body {
+  background: transparent;
+}
+
+html[data-window="manage"] body {
+  background: var(--bg);
 }
 
 input,
@@ -64,17 +73,23 @@ select {
 kbd {
   display: inline-block;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--kbd-bg);
   font-family: inherit;
   font-size: 11px;
-  line-height: 18px;
+  line-height: 17px;
+}
+
+mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
 }
 
 .btn {
   padding: 5px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-subtle);
   cursor: pointer;
 }
@@ -87,6 +102,7 @@ kbd {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
+  font-weight: 600;
 }
 
 .btn.danger {
@@ -97,11 +113,25 @@ kbd {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-subtle);
   outline: none;
 }
 
 .field:focus {
   border-color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a313b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }

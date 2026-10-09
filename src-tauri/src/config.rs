@@ -20,6 +20,15 @@ pub struct Config {
     /// Reopening within this many seconds keeps the previous query;
     /// 0 always starts empty.
     pub keep_query_seconds: u64,
+    /// Open the popover at the text caret of the focused app (or the mouse
+    /// when the caret is unknown) instead of the upper middle of the screen.
+    pub follow_caret: bool,
+    /// Show the preview panel next to the list as soon as the popover opens,
+    /// instead of only after → is pressed.
+    pub auto_peek: bool,
+    /// Hotkey that swaps the text just pasted for an earlier clip while the
+    /// post-paste chip is visible. Empty disables swapping.
+    pub swap_hotkey: String,
 }
 
 impl Default for Config {
@@ -34,6 +43,9 @@ impl Default for Config {
                 .to_vec(),
             restore_clipboard: true,
             keep_query_seconds: 60,
+            follow_caret: false,
+            auto_peek: true,
+            swap_hotkey: "Alt+V".into(),
         }
     }
 }

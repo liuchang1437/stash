@@ -1,13 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type Settings } from "./api";
+  import CloseButton from "./CloseButton.svelte";
 
   let { onDone }: { onDone: () => void } = $props();
 
   let settings = $state<Settings | null>(null);
   let ignoredApps = $state("");
   let error = $state("");
-  let recording = $state(false);
+  /** Which hotkey field is waiting for a key combination. */
+  let recording = $state<"hotkey" | "swapHotkey" | null>(null);
 
   onMount(async () => {
     settings = await api.getSettings();
@@ -43,12 +45,16 @@
     return named[code] ?? null;
   }
 
-  function recordHotkey(e: KeyboardEvent) {
+  function recordHotkey(e: KeyboardEvent, which: "hotkey" | "swapHotkey") {
     if (e.key === "Tab") return;
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") {
       (e.target as HTMLElement).blur();
+      return;
+    }
+    if (which === "swapHotkey" && (e.key === "Backspace" || e.key === "Delete") && settings) {
+      settings.config.swapHotkey = "";
       return;
     }
     if (MODIFIERS.includes(e.key) || !settings) return;
@@ -64,7 +70,7 @@
       return;
     }
     error = "";
-    settings.config.hotkey = [...parts, key].join("+");
+    settings.config[which] = [...parts, key].join("+");
   }
 
   async function save() {
@@ -98,7 +104,11 @@
 <svelte:window {onkeydown} />
 
 <div class="settings">
-  <header><h1>设置</h1></header>
+  <!-- The window has no title bar: the header drags it. -->
+  <header data-tauri-drag-region>
+    <h1 data-tauri-drag-region>设置</h1>
+    <CloseButton onClose={onDone} />
+  </header>
 
   {#if settings}
     <div class="form">
@@ -106,14 +116,38 @@
         <span>唤起快捷键</span>
         <input
           class="field hotkey"
-          class:recording
+          class:recording={recording === "hotkey"}
           readonly
-          value={recording ? "请按下新的快捷键…" : settings.config.hotkey}
-          onfocus={() => (recording = true)}
-          onblur={() => (recording = false)}
-          onkeydown={recordHotkey}
+          value={recording === "hotkey" ? "请按下新的快捷键…" : settings.config.hotkey}
+          onfocus={() => (recording = "hotkey")}
+          onblur={() => (recording = null)}
+          onkeydown={(e) => recordHotkey(e, "hotkey")}
         />
         <small>点击后直接按下组合键。默认 Alt+Space。</small>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" bind:checked={settings.config.followCaret} />
+        <span>在输入光标旁边打开（默认在屏幕中上方；找不到光标时跟随鼠标）</span>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" bind:checked={settings.config.autoPeek} />
+        <span>打开时自动展开预览（关闭后按 → 展开）</span>
+      </label>
+
+      <label>
+        <span>粘贴后「换一条」快捷键</span>
+        <input
+          class="field hotkey"
+          class:recording={recording === "swapHotkey"}
+          readonly
+          value={recording === "swapHotkey" ? "请按下新的快捷键…" : settings.config.swapHotkey || "（已关闭）"}
+          onfocus={() => (recording = "swapHotkey")}
+          onblur={() => (recording = null)}
+          onkeydown={(e) => recordHotkey(e, "swapHotkey")}
+        />
+        <small>粘贴后的几秒内按住 Alt 连按 V 选择更早的记录，松开 Alt 原地替换。只在提示条出现时生效；按 Backspace 关闭。</small>
       </label>
 
       <label>
@@ -176,7 +210,10 @@
   }
 
   header {
-    padding: 14px 20px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 6px 20px;
   }
 
   h1 {
@@ -211,7 +248,13 @@
 
   .row {
     display: flex;
+    align-items: center;
     gap: 8px;
+  }
+
+  .row .btn {
+    flex: none;
+    white-space: nowrap;
   }
 
   .hotkey {
@@ -229,7 +272,7 @@
 
   textarea.field {
     resize: none;
-    font-family: "Cascadia Mono", Consolas, monospace;
+    font-family: var(--mono);
     font-size: 13px;
   }
 

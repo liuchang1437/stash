@@ -3,29 +3,49 @@ mod commands;
 mod config;
 mod db;
 mod migrate;
+mod placement;
 mod platform;
 mod search;
 mod snippets;
 mod template;
+mod yank;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use notify::{RecursiveMode, Watcher};
+use serde::Serialize;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, WindowEvent,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use config::Config;
 use db::Db;
+use placement::{Anchor, AnchorKind, Layout, Space};
 use search::{Entry, Index, ItemRef};
 
+/// The popover that opens at the caret.
 const MAIN_WINDOW: &str = "main";
+/// Non-activating strip shown under the caret after a paste.
+pub(crate) const CHIP_WINDOW: &str = "chip";
+/// Regular window for settings and the snippet editor.
+pub(crate) const MANAGE_WINDOW: &str = "manage";
+
+/// Popover geometry used before the UI reports its real size, logical px.
+const POPOVER_WIDTH: f64 = 480.0;
+const POPOVER_HEIGHT: f64 = 360.0;
+const POPOVER_MARGIN: f64 = 20.0;
+/// Mirrors CARD_W / GAP / PEEK_W in src/lib/layout.ts, logical px.
+const CARD_WIDTH: f64 = 440.0;
+const PANEL_GAP: f64 = 8.0;
+const PEEK_WIDTH: f64 = 480.0;
 
 pub struct AppState {
     config: RwLock<Config>,
@@ -42,6 +62,41 @@ pub struct AppState {
     /// When the launcher was last hidden; decides whether the UI keeps its
     /// previous query on the next show.
     hidden_at: Mutex<Option<Instant>>,
+    /// Where the popover is placed (upper middle of the screen, or the caret).
+    anchor: Mutex<Option<Anchor>>,
+    /// Caret (or mouse) of the last paste, for the chip.
+    chip_anchor: Mutex<Option<Anchor>>,
+    main_shortcut: Mutex<Option<Shortcut>>,
+    /// Alt+V, registered only while the post-paste chip is visible.
+    swap_shortcut: Mutex<Option<Shortcut>>,
+    last_paste: Mutex<Option<yank::LastPaste>>,
+    /// Bumped whenever the chip changes; pending auto-hides compare it.
+    chip_seq: AtomicU64,
+    /// Last request for the manage window, read by its UI when it loads.
+    manage_request: Mutex<Option<ManageRequest>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManageRequest {
+    /// `settings` or `edit`
+    pub view: String,
+    /// Snippet to edit; none for a new one.
+    pub key: Option<String>,
+    /// Initial body of a new snippet.
+    pub body: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShownPayload {
+    keep_query: bool,
+    anchor: AnchorKind,
+    space: Space,
+    /// Executable name of the window that pastes will go to.
+    target_app: Option<String>,
+    /// Open the preview panel right away (`config.auto_peek`).
+    auto_peek: bool,
 }
 
 impl AppState {
@@ -64,14 +119,17 @@ fn show_launcher(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
+    yank::hide_chip(app);
     let state = app.state::<AppState>();
     let foreground = platform::foreground_window();
     if !platform::is_own_window(foreground) {
         state.prev_window.store(foreground, Ordering::SeqCst);
     }
+    let target = state.prev_window.load(Ordering::SeqCst);
 
-    // Payload `true` tells the UI to keep its previous query.
-    let keep_query = if window.is_visible().unwrap_or(false) {
+    // Payload `keepQuery` tells the UI to keep its previous query.
+    let visible = window.is_visible().unwrap_or(false);
+    let keep_query = if visible {
         true
     } else {
         let keep_for = Duration::from_secs(state.config.read().unwrap().keep_query_seconds);
@@ -82,10 +140,167 @@ fn show_launcher(app: &AppHandle) {
             .is_some_and(|t| t.elapsed() < keep_for)
     };
 
-    let _ = place_on_cursor_monitor(&window);
+    let (follow_caret, auto_peek) = {
+        let config = state.config.read().unwrap();
+        (config.follow_caret, config.auto_peek)
+    };
+    // By default the popover opens in the upper middle of the screen, like a
+    // launcher; with `follow_caret` it opens at the caret instead. (The
+    // post-paste chip always goes to the caret: see `caret_anchor`.)
+    let anchor = if follow_caret {
+        find_anchor(&window, (!platform::is_own_window(foreground)).then_some(target))
+    } else {
+        center_anchor(&window, auto_peek)
+    };
+    *state.anchor.lock().unwrap() = Some(anchor);
+    if !visible {
+        let space = anchor.space();
+        let layout = Layout {
+            width: POPOVER_WIDTH,
+            height: POPOVER_HEIGHT,
+            card_x: POPOVER_MARGIN,
+            margin: POPOVER_MARGIN,
+            flip: space.below < POPOVER_HEIGHT && space.above > space.below,
+        };
+        apply_bounds(&window, anchor.place(&layout));
+    }
+
     let _ = window.show();
     let _ = window.set_focus();
-    let _ = app.emit("launcher-shown", keep_query);
+    let _ = app.emit_to(
+        MAIN_WINDOW,
+        "launcher-shown",
+        ShownPayload {
+            keep_query,
+            anchor: anchor.kind,
+            space: anchor.space(),
+            target_app: platform::process_name(target),
+            auto_peek,
+        },
+    );
+}
+
+/// Upper middle of the monitor under the mouse. The card and, when it opens
+/// by itself, the preview beside it are centered together.
+fn center_anchor(window: &WebviewWindow, auto_peek: bool) -> Anchor {
+    let point = window
+        .cursor_position()
+        .map(|p| (p.x as i32, p.y as i32))
+        .unwrap_or((0, 0));
+    let (work, scale) = monitor_at(window, point);
+    let width = if auto_peek {
+        CARD_WIDTH + PANEL_GAP + PEEK_WIDTH
+    } else {
+        CARD_WIDTH
+    };
+    Anchor::centered(work, scale, width)
+}
+
+/// Where the post-paste chip goes: the caret of the window that was pasted
+/// into, else the mouse pointer.
+pub(crate) fn caret_anchor(app: &AppHandle, target: platform::WindowHandle) -> Option<Anchor> {
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    Some(find_anchor(&window, (target != 0).then_some(target)))
+}
+
+/// Caret of `target` when it can be found, else the mouse pointer.
+fn find_anchor(window: &WebviewWindow, target: Option<platform::WindowHandle>) -> Anchor {
+    let caret = target.and_then(platform::caret_rect);
+    let point = caret
+        .map(|c| (c.left, c.bottom))
+        .or_else(|| {
+            window
+                .cursor_position()
+                .ok()
+                .map(|p| (p.x as i32, p.y as i32))
+        })
+        .unwrap_or((0, 0));
+    let (work, scale) = monitor_at(window, point);
+    match caret {
+        Some(c) => Anchor::caret(c, work, scale),
+        None => Anchor::mouse(point.0, point.1, work, scale),
+    }
+}
+
+/// Work area and scale factor of the monitor containing `point`.
+fn monitor_at(window: &WebviewWindow, (x, y): (i32, i32)) -> (platform::Rect, f64) {
+    let monitors = window.available_monitors().unwrap_or_default();
+    let monitor = monitors
+        .iter()
+        .find(|m| {
+            let (p, s) = (m.position(), m.size());
+            x >= p.x && x < p.x + s.width as i32 && y >= p.y && y < p.y + s.height as i32
+        })
+        .cloned()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let (bounds, scale) = match monitor {
+        Some(m) => {
+            let (p, s) = (m.position(), m.size());
+            (
+                platform::Rect {
+                    left: p.x,
+                    top: p.y,
+                    right: p.x + s.width as i32,
+                    bottom: p.y + s.height as i32,
+                },
+                m.scale_factor(),
+            )
+        }
+        None => (
+            platform::Rect {
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1080,
+            },
+            1.0,
+        ),
+    };
+    (platform::work_area(x, y).unwrap_or(bounds), scale)
+}
+
+pub(crate) fn native_handle(window: &WebviewWindow) -> platform::WindowHandle {
+    #[cfg(windows)]
+    {
+        window
+            .hwnd()
+            .map(|h| h.0 as platform::WindowHandle)
+            .unwrap_or(0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        0
+    }
+}
+
+/// Moves and resizes a window (physical px) in one step where possible.
+pub(crate) fn apply_bounds(window: &WebviewWindow, (x, y, w, h): (i32, i32, i32, i32)) {
+    if !platform::set_bounds(native_handle(window), x, y, w, h) {
+        let _ = window.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
+/// Re-places the popover after the UI changed its size or direction.
+pub(crate) fn place_popover(app: &AppHandle, layout: &Layout) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    if let Some(anchor) = *app.state::<AppState>().anchor.lock().unwrap() {
+        apply_bounds(&window, anchor.place(layout));
+    }
+}
+
+pub(crate) fn open_manage(app: &AppHandle, request: ManageRequest) {
+    hide_launcher(app);
+    *app.state::<AppState>().manage_request.lock().unwrap() = Some(request.clone());
+    if let Some(window) = app.get_webview_window(MANAGE_WINDOW) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let _ = app.emit_to(MANAGE_WINDOW, "manage-open", request);
 }
 
 fn hide_launcher(app: &AppHandle) {
@@ -111,42 +326,21 @@ fn toggle_launcher(app: &AppHandle) {
     }
 }
 
-/// Centers the window horizontally, a fifth of the way down, on the monitor
-/// under the mouse cursor.
-fn place_on_cursor_monitor(window: &WebviewWindow) -> tauri::Result<()> {
-    let cursor = window.cursor_position()?;
-    let monitor = window
-        .available_monitors()?
-        .into_iter()
-        .find(|m| {
-            let (p, s) = (m.position(), m.size());
-            cursor.x >= p.x as f64
-                && cursor.x < p.x as f64 + s.width as f64
-                && cursor.y >= p.y as f64
-                && cursor.y < p.y as f64 + s.height as f64
-        })
-        .or(window.primary_monitor()?);
-    let Some(monitor) = monitor else {
-        return Ok(());
-    };
-    let (p, s) = (monitor.position(), monitor.size());
-    // outer_size is in the current monitor's scale; convert to the target's.
-    let scale = monitor.scale_factor() / window.scale_factor()?;
-    let width = window.outer_size()?.width as f64 * scale;
-    let x = p.x as f64 + (s.width as f64 - width) / 2.0;
-    let y = p.y as f64 + s.height as f64 / 5.0;
-    window.set_position(PhysicalPosition::new(x as i32, y as i32))
-}
-
 fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
     let shortcut: Shortcut = hotkey
         .parse()
         .map_err(|e| format!("无法识别快捷键 “{hotkey}”：{e}"))?;
     let shortcuts = app.global_shortcut();
-    let _ = shortcuts.unregister_all();
+    let state = app.state::<AppState>();
+    let mut current = state.main_shortcut.lock().unwrap();
+    if let Some(old) = current.take() {
+        let _ = shortcuts.unregister(old);
+    }
     shortcuts
         .register(shortcut)
-        .map_err(|e| format!("注册快捷键 “{hotkey}” 失败，可能已被其他程序占用：{e}"))
+        .map_err(|e| format!("注册快捷键 “{hotkey}” 失败，可能已被其他程序占用：{e}"))?;
+    *current = Some(shortcut);
+    Ok(())
 }
 
 fn on_clipboard_change(app: &AppHandle) {
@@ -266,10 +460,14 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             "snippets" => {
                 let _ = commands::open_snippets_dir(app.clone(), app.state::<AppState>());
             }
-            "settings" => {
-                show_launcher(app);
-                let _ = app.emit("open-settings", ());
-            }
+            "settings" => open_manage(
+                app,
+                ManageRequest {
+                    view: "settings".into(),
+                    key: None,
+                    body: None,
+                },
+            ),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -303,8 +501,13 @@ pub fn run() {
         ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    if yank::is_swap_hotkey(app, shortcut) {
+                        yank::on_swap_hotkey(app);
+                    } else {
                         toggle_launcher(app);
                     }
                 })
@@ -340,12 +543,29 @@ pub fn run() {
                 hotkey_error: Mutex::new(None),
                 snippet_watcher: Mutex::new(None),
                 hidden_at: Mutex::new(None),
+                anchor: Mutex::new(None),
+                chip_anchor: Mutex::new(None),
+                main_shortcut: Mutex::new(None),
+                swap_shortcut: Mutex::new(None),
+                last_paste: Mutex::new(None),
+                chip_seq: AtomicU64::new(0),
+                manage_request: Mutex::new(None),
             });
 
             let handle = app.handle();
+            if let Some(chip) = handle.get_webview_window(CHIP_WINDOW) {
+                platform::make_non_activating(native_handle(&chip));
+            }
             if let Err(e) = register_hotkey(handle, &hotkey) {
                 *app.state::<AppState>().hotkey_error.lock().unwrap() = Some(e);
-                show_launcher(handle);
+                open_manage(
+                    handle,
+                    ManageRequest {
+                        view: "settings".into(),
+                        key: None,
+                        body: None,
+                    },
+                );
             }
             watch_snippets(handle);
             let listener_handle = handle.clone();
@@ -356,7 +576,11 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                hide_launcher(window.app_handle());
+                if window.label() == MAIN_WINDOW {
+                    hide_launcher(window.app_handle());
+                } else {
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -370,6 +594,16 @@ pub fn run() {
             commands::save_settings,
             commands::hide_window,
             commands::open_snippets_dir,
+            commands::place_popover,
+            commands::calc_detail,
+            commands::preview_snippet,
+            commands::activate_text,
+            commands::open_explorer,
+            commands::open_manage,
+            commands::manage_request,
+            commands::close_manage,
+            commands::chip_swap,
+            commands::chip_undo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
