@@ -436,9 +436,25 @@
     return !input || (input.selectionStart === 0 && input.selectionEnd === 0);
   }
 
+  /** A key press written the way the menu's shortcut column shows it. */
+  function shortcutLabel(e: KeyboardEvent): string | null {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (e.key === "Enter") return ctrl ? "^↵" : e.shiftKey ? "⇧↵" : null;
+    if (ctrl && /^[a-z]$/i.test(e.key)) return "^" + e.key.toUpperCase();
+    return null;
+  }
+
   function menuKeydown(e: KeyboardEvent) {
     const items = menu;
     const sub = subIndex >= 0 ? items[menuIndex]?.sub : undefined;
+    // The shortcuts printed next to the items work while the menu is open.
+    const label = shortcutLabel(e);
+    const shortcut = label ? items.findIndex((item) => item.keys === label) : -1;
+    if (shortcut >= 0) {
+      e.preventDefault();
+      pickMenu(shortcut);
+      return;
+    }
     if (e.key === "Escape" || (e.ctrlKey && e.key === "k")) {
       if (sub) subIndex = -1;
       else closeMenu();
