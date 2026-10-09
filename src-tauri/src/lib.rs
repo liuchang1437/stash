@@ -505,11 +505,20 @@ pub fn run() {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    if yank::is_swap_hotkey(app, shortcut) {
-                        yank::on_swap_hotkey(app);
-                    } else {
-                        toggle_launcher(app);
-                    }
+                    // The plugin calls this while holding its shortcut-table
+                    // lock, and register/unregister take that same lock: doing
+                    // either from here (e.g. hide_chip dropping Alt+V when the
+                    // popover opens) deadlocks the main thread. Handle the
+                    // press on another thread so the lock is released first.
+                    let app = app.clone();
+                    let shortcut = *shortcut;
+                    thread::spawn(move || {
+                        if yank::is_swap_hotkey(&app, &shortcut) {
+                            yank::on_swap_hotkey(&app);
+                        } else {
+                            toggle_launcher(&app);
+                        }
+                    });
                 })
                 .build(),
         )
