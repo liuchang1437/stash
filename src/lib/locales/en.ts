@@ -49,7 +49,8 @@ const en: Messages = {
     scopes: { clip: "Clipboard", snip: "Snippets", pin: "Pinned" },
     tagNote: (n) => `Tag · ${plural(n, "snippet", "snippets")}`,
     groups: { pinned: "Pinned", today: "Today", yesterday: "Yesterday", earlier: "Earlier" },
-    placeholder: "Search, # to filter, or a sum like 2*$1",
+    // Short enough to fit next to "Caret not found" (monospace, about 24 characters).
+    placeholder: "Search, # filter, 2*$1",
     searchIn: (scope) => `Search ${scope}`,
     filtering: "Filter",
     switchScope: "^Tab scope",
