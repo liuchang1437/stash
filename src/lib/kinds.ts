@@ -282,20 +282,6 @@ export function markTerms(text: string, terms: string[]): Piece[] {
   return out;
 }
 
-/** Splits a snippet template into text and `{{variable}}` pieces. */
-export function templatePieces(body: string): { text: string; variable: boolean }[] {
-  const out: { text: string; variable: boolean }[] = [];
-  const re = /\{\{[^{}]+\}\}/g;
-  let last = 0;
-  for (const m of body.matchAll(re)) {
-    if (m.index! > last) out.push({ text: body.slice(last, m.index), variable: false });
-    out.push({ text: m[0], variable: true });
-    last = m.index! + m[0].length;
-  }
-  if (last < body.length) out.push({ text: body.slice(last), variable: false });
-  return out;
-}
-
 export function lineCount(text: string): number {
   return text.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n").length;
 }

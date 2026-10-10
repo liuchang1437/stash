@@ -21,6 +21,8 @@ export type Hit = {
   useCount: number;
   lastUsedAt: number;
   chars: number;
+  /** A snippet with variables: what it pastes with the defaults. */
+  rendered: Segment[] | null;
 };
 
 /** Which items a search covers; `tag` limits it to snippets with that tag. */
@@ -91,8 +93,15 @@ export type Layout = { width: number; height: number; cardX: number; margin: num
 export type CalcRef = { n: number; value: string; source: string | null; lastUsedAt: number };
 export type CalcDetail = { result: string; expression: string; refs: CalcRef[] };
 
-/** Piece of a rendered snippet; `field` is the variable it came from. */
-export type Segment = { text: string; field: string | null };
+/**
+ * Piece of a rendered snippet: the template's own text, a value the user
+ * fills in, an automatic value or the caret position. `name` is the field
+ * name of an input, or `date`, `clipboard`, `clipboard:N`, `uuid`.
+ */
+export type Segment = { text: string; kind: "text" | "input" | "auto" | "cursor"; name: string | null };
+
+/** A template in the editor: its input fields and what it pastes. */
+export type TemplatePreview = { fields: Field[]; segments: Segment[] };
 
 export type ManageRequest = { view: "settings" | "edit"; key: string | null; body: string | null };
 
@@ -120,6 +129,8 @@ export const api = {
     invoke<string>("save_snippet", { path, title, tags, body }),
   previewSnippet: (key: string, values: Record<string, string>) =>
     invoke<Segment[]>("preview_snippet", { key, values }),
+  previewTemplate: (body: string, values: Record<string, string>) =>
+    invoke<TemplatePreview>("preview_template", { body, values }),
   calcDetail: (query: string) => invoke<CalcDetail | null>("calc_detail", { query }),
   openExplorer: (key: string) => invoke<void>("open_explorer", { key }),
   getSettings: () => invoke<Settings>("get_settings"),
