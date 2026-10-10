@@ -1,19 +1,38 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { relativeTime, type Hit } from "./api";
-  import { appName, LABELS, lineCount, markTerms, parseBlocks, templatePieces, type Kind } from "./kinds";
+  import { relativeTime, type Hit, type Segment } from "./api";
+  import { appName, LABELS, lineCount, markTerms, parseBlocks, type Kind } from "./kinds";
+  import Rendered from "./Rendered.svelte";
+  import { templatePieces } from "./template";
 
-  type Props = { hit: Hit; kind: Kind; raw: boolean; onToggle: () => void };
-  let { hit, kind, raw, onToggle }: Props = $props();
+  type Props = {
+    hit: Hit;
+    kind: Kind;
+    /** Tables: the source instead of the table. Snippets: the template instead of the result. */
+    raw: boolean;
+    onToggle: () => void;
+    /** A snippet with variables: what it pastes. */
+    rendered?: Segment[] | null;
+    /** While its variables are filled in: the field being edited. */
+    focus?: string | null;
+  };
+  let { hit, kind, raw, onToggle, rendered = null, focus = null }: Props = $props();
 
   let body: HTMLElement;
 
   const blocks = $derived(kind === "snippet" ? [] : parseBlocks(hit.preview));
   const hasTable = $derived(blocks.some((b) => b.type === "table"));
   const truncated = $derived(hit.chars > hit.preview.length);
+  const filling = $derived(focus !== null);
+  const showResult = $derived(!!rendered && (filling || !raw));
 
   export function scroll(delta: number) {
     body?.scrollBy({ top: delta });
+  }
+
+  /** Where `el` is inside the scrolling body. */
+  function offsetOf(el: Element): number {
+    return el.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
   }
 
   // A new item (or view) starts at its first match, or at the top.
@@ -21,11 +40,25 @@
     hit.key;
     hit.terms;
     raw;
+    if (filling) return;
     tick().then(() => {
       if (!body) return;
       const mark = body.querySelector("mark");
-      const offset = mark ? mark.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop : 0;
-      body.scrollTop = Math.max(0, offset - 40);
+      body.scrollTop = mark ? Math.max(0, offsetOf(mark) - 40) : 0;
+    });
+  });
+
+  // While filling in, keep the field being edited in view.
+  $effect(() => {
+    if (!focus) return;
+    tick().then(() => {
+      const el = body?.querySelector(".active");
+      if (!el) return;
+      const top = offsetOf(el);
+      const height = el.getBoundingClientRect().height;
+      if (top < body.scrollTop || top + height > body.scrollTop + body.clientHeight) {
+        body.scrollTop = Math.max(0, top - 40);
+      }
     });
   });
 </script>
@@ -34,22 +67,27 @@
 
 <section class="peek">
   <header>
-    <span class="label">{LABELS[kind]}</span>
-    <span class="muted">{hit.chars.toLocaleString()} 字 · {lineCount(hit.preview)} 行</span>
+    <span class="label">{filling ? "将粘贴" : LABELS[kind]}</span>
+    {#if !filling}
+      <span class="muted">{hit.chars.toLocaleString()} 字 · {lineCount(hit.preview)} 行</span>
+    {/if}
     <span class="spacer"></span>
-    {#if hasTable}
+    {#if hasTable || (rendered && !filling)}
       <div class="seg" role="group" aria-label="显示方式">
-        <button class:on={!raw} onclick={() => raw && onToggle()}>排版</button>
-        <button class:on={raw} onclick={() => !raw && onToggle()}>原文</button>
+        <button class:on={!raw} onclick={() => raw && onToggle()}>{hasTable ? "排版" : "结果"}</button>
+        <button class:on={raw} onclick={() => !raw && onToggle()}>{hasTable ? "原文" : "模板"}</button>
       </div>
       <kbd>Tab</kbd>
     {/if}
   </header>
 
   <div class="body" bind:this={body}>
-    {#if kind === "snippet"}
-      <pre class="template">{#each templatePieces(hit.preview) as piece}{#if piece.variable}<span
-              class="var">{@render marked(piece.text)}</span
+    {#if showResult && rendered}
+      <pre class="template"><Rendered segments={rendered} {focus} terms={filling ? [] : hit.terms} /></pre>
+    {:else if kind === "snippet"}
+      <pre class="template">{#each templatePieces(hit.preview) as piece}{#if piece.token}<span
+              class="var {piece.token.kind}"
+              title={piece.token.problem ?? ""}>{@render marked(piece.text)}</span
             >{:else}{@render marked(piece.text)}{/if}{/each}</pre>
     {:else}
       {#each blocks as block}
@@ -90,7 +128,7 @@
     {/if}
     <span>uses=<b>{hit.useCount}</b></span>
     <span class="spacer"></span>
-    <span class="muted">← 收起</span>
+    {#if !filling}<span class="muted">← 收起</span>{/if}
   </footer>
 </section>
 
@@ -182,11 +220,30 @@
     background: var(--bg-subtle);
   }
 
+  /* Template view: variables coloured like the result and the editor. */
   .var {
-    padding: 0 3px;
     border-radius: 3px;
-    background: rgba(185, 163, 255, 0.16);
-    color: var(--violet);
+  }
+
+  .var.input {
+    color: var(--green);
+    background: rgba(63, 209, 122, 0.1);
+  }
+
+  .var.auto {
+    color: var(--blue);
+    background: rgba(108, 182, 255, 0.1);
+  }
+
+  .var.cursor {
+    color: var(--accent);
+    background: rgba(245, 165, 36, 0.12);
+  }
+
+  .var.invalid {
+    color: var(--danger);
+    text-decoration: underline wavy;
+    text-underline-offset: 3px;
   }
 
   .table-wrap {

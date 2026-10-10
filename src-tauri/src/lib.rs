@@ -624,6 +624,7 @@ pub fn run() {
             commands::place_popover,
             commands::calc_detail,
             commands::preview_snippet,
+            commands::preview_template,
             commands::activate_text,
             commands::open_explorer,
             commands::open_manage,

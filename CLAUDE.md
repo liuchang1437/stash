@@ -33,7 +33,8 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 
 **Activation is two-phase.** `activate(key, mode, values)` with `mode` ∈ `paste | copy | open`:
 - If a snippet has input variables and no `values` were passed, it returns `NeedsInput { fields }`.
-- The popover then expands the fields inline under the selected row and calls `activate` again with the values. While the user types, `preview_snippet` returns the rendered text as `Segment`s (`template::render_segments`) so the UI can mark each variable.
+- The popover then expands the fields inline under the selected row and calls `activate` again with the values. While the user types, `preview_snippet` returns the rendered text as `Segment`s (`template::render_segments`), and the side preview shows them with the field being edited highlighted. A segment's `kind` is `text | input | auto | cursor`. A UUID renders empty in previews, because the real one is only made at paste time.
+- Before that, search hits for snippets with variables already carry `rendered` (their defaults filled in, set by `commands::search`, which reads the clipboard at most once). The preview shows this result by default; Tab switches to the template.
 - `activate_text(key, text, mode)` pastes text the UI derived from an item (calculator formats, "paste as…" transformations in `src/lib/kinds.ts`); `key` only records usage.
 - Usage stats are recorded only after the action succeeds.
 
@@ -51,7 +52,9 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 
 **Clipboard history numbering is shared.** `{{clipboard:N}}` in templates and `$N` in calculator expressions both mean the N-th most recently copied *or used* clip, with 1 = latest. Both resolve through `Index::recent_clips`. Pinning does not affect this order.
 
-**Template engine** (`template.rs`): `parse` → `fields` → `render`. With `url_encode` (open mode), a value is percent-encoded only when the rendered text before it already contains `://`, so `https://x/s?q={{q}}` gets encoded but a bare `{{url}}` does not. If you add a variable, also update the syntax help in `SnippetEditor.svelte` and the README table.
+**Template engine** (`template.rs`): `parse` → `fields` → `render`. With `url_encode` (open mode), a value is percent-encoded only when the rendered text before it already contains `://`, so `https://x/s?q={{q}}` gets encoded but a bare `{{url}}` does not. If you add a variable or change the syntax, also update `src/lib/template.ts` and the README table. In that file, `tokens` mirrors `parse`/`parse_var` for highlighting and error messages, and `VARIABLES` lists what the editor offers.
+
+**Snippet editor** (`SnippetEditor.svelte`). It uses CodeMirror 6, set up in `src/lib/editor.ts`. The component imports that module dynamically, so only the manage window loads CodeMirror. Typing `{{` completes a variable. Ctrl+K opens a menu that inserts a variable, or turns the selected text into one (the selection becomes the default). The side panel calls `preview_template(body, values)` on the unsaved text to list the fields and render the result with test values.
 
 **Calculator** (`calc.rs`): a hand-written recursive-descent parser. A query counts as a calculation only when it contains a binary or postfix operator, a function call, or implicit multiplication, so ordinary searches like `e` or `2024` never show a result. `%` is modulo (`rem_euclid`). `$N` references are substituted as text before parsing (`substitute_clips`).
 

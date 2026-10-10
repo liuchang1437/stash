@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{ClipRow, Usage};
 use crate::highlight::{self, Range};
 use crate::snippets::Snippet;
+use crate::template::Segment;
 
 /// Only this many characters of a body are indexed.
 const INDEXED_CHARS: usize = 1000;
@@ -220,6 +221,9 @@ pub struct Hit {
     pub use_count: u32,
     pub last_used_at: i64,
     pub chars: usize,
+    /// A snippet with variables: what it pastes with the defaults. Set by
+    /// `commands::search`, which can read the clipboard.
+    pub rendered: Option<Vec<Segment>>,
 }
 
 impl Hit {
@@ -243,6 +247,7 @@ impl Hit {
             use_count: entry.use_count,
             last_used_at: entry.last_used_at,
             chars: entry.body.chars().count(),
+            rendered: None,
         }
     }
 
@@ -284,6 +289,7 @@ impl Hit {
             key: ItemRef::Calc(result.clone()).key(),
             kind: "calc",
             chars: result.chars().count(),
+            rendered: None,
             title: result,
             title_marks: Vec::new(),
             context: None,

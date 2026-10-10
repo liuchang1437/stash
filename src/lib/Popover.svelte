@@ -403,9 +403,12 @@
 
   async function startFill(hit: Hit, title: string, fields: Field[], mode: Mode) {
     const values = Object.fromEntries(fields.map((f) => [f.name, f.default]));
-    fill = { key: hit.key, title, fields, values, mode, segments: [], focus: fields[0]?.name ?? "" };
+    const segments = hit.rendered ?? [];
+    fill = { key: hit.key, title, fields, values, mode, segments, focus: fields[0]?.name ?? "" };
     phase = "fill";
-    peekOpen = false;
+    // The preview shows the result while filling in, even if it opens only on →.
+    peekOpen = true;
+    peekRaw = false;
     updatePreview();
     await tick();
     focusField(0);
@@ -846,14 +849,6 @@
                   {/if}
                 </div>
               {/each}
-              <div class="rendered">
-                <span class="r-label">将粘贴 ›</span>
-                <span class="r-text"
-                  >{#each fill.segments as seg}{#if seg.field === "cursor"}<span class="r-cursor"></span
-                      >{:else if seg.field}<span class="r-var" class:active={seg.field === fill.focus}>{seg.text}</span
-                      >{:else}{seg.text}{/if}{/each}</span
-                >
-              </div>
             </div>
           {:else if sel && phase !== "fill"}
             <div class="excerpt">
@@ -904,6 +899,7 @@
 
   <!-- Panels are placed by `geometry`; hidden until measured. -->
   {#if geometry.peek && current && kind}
+    {@const filling = phase === "fill" && fill?.key === current.key ? fill : null}
     <div
       class="float"
       style:left="{geometry.origin.x + geometry.peek.x}px"
@@ -911,7 +907,15 @@
       style:visibility={peekHeight ? null : "hidden"}
       bind:offsetHeight={peekHeight}
     >
-      <Peek bind:this={peek} hit={current} {kind} raw={peekRaw} onToggle={() => (peekRaw = !peekRaw)} />
+      <Peek
+        bind:this={peek}
+        hit={current}
+        {kind}
+        raw={peekRaw}
+        onToggle={() => (peekRaw = !peekRaw)}
+        rendered={filling ? filling.segments : current.rendered}
+        focus={filling ? filling.focus : null}
+      />
     </div>
   {/if}
   {#if geometry.menu && current}
@@ -1306,45 +1310,6 @@
     background: var(--bg);
     font-size: 11.5px;
     outline: none;
-  }
-
-  .rendered {
-    display: flex;
-    gap: 8px;
-    margin-top: 4px;
-    font-size: 11.5px;
-    line-height: 1.6;
-  }
-
-  .r-label {
-    flex: none;
-    color: var(--text-faint);
-  }
-
-  .r-text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    color: var(--text-muted);
-    max-height: 80px;
-    overflow: hidden;
-  }
-
-  .r-var {
-    color: var(--green);
-  }
-
-  .r-var.active {
-    color: var(--accent);
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-
-  .r-cursor {
-    display: inline-block;
-    width: 1px;
-    height: 12px;
-    vertical-align: -1px;
-    background: var(--accent);
   }
 
   /* Status line */

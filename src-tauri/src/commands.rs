@@ -11,7 +11,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::calc;
 use crate::config::Config;
 use crate::placement::Layout;
-use crate::search::{Filter, Hit, ItemRef, TagCount};
+use crate::search::{Filter, Hit, Index, ItemRef, TagCount};
 use crate::template::{self, Field, Part, Segment};
 use crate::{
     hide_launcher, now, platform, register_hotkey, reload_snippets, snippets, watch_snippets, yank,
@@ -32,6 +32,7 @@ fn parse_key(key: &str) -> CmdResult<ItemRef> {
 pub fn search(state: State<'_, AppState>, query: String, filter: Filter) -> Vec<Hit> {
     let index = state.index.read().unwrap();
     let mut hits = index.query(&query, &filter, now(), 100);
+    render_snippets(&index, &mut hits);
     // A scope (clipboard, snippets, a tag) is for browsing; no calculator.
     if !filter.is_all() {
         return hits;
@@ -41,6 +42,28 @@ pub fn search(state: State<'_, AppState>, query: String, filter: Filter) -> Vec<
         hits.insert(0, Hit::calculation(&calculation.expression, calculation.result));
     }
     hits
+}
+
+/// Lets the preview show what each snippet with variables would paste,
+/// using the defaults. The clipboard is read at most once.
+fn render_snippets(index: &Index, hits: &mut [Hit]) {
+    let mut clipboard: Option<String> = None;
+    for hit in hits.iter_mut().filter(|h| h.kind == "snippet") {
+        let Some(entry) = ItemRef::parse(&hit.key).and_then(|item| index.get(&item)) else {
+            continue;
+        };
+        let parts = template::parse(&entry.body);
+        if parts.iter().all(|p| matches!(p, Part::Text(_))) {
+            continue;
+        }
+        let current = if parts.contains(&Part::Clipboard) {
+            clipboard.get_or_insert_with(|| platform::read_clipboard_text().unwrap_or_default())
+        } else {
+            ""
+        };
+        let history = index.recent_clips(template::history_depth(&parts));
+        hit.rendered = Some(template::render_segments(&parts, &HashMap::new(), current, &history));
+    }
 }
 
 /// Snippet tags for `#` completion in the popover.
@@ -436,6 +459,28 @@ pub fn preview_snippet(
     Ok(template::render_segments(
         &parts, &values, &clipboard, &history,
     ))
+}
+
+#[derive(Serialize)]
+pub struct TemplatePreview {
+    fields: Vec<Field>,
+    segments: Vec<Segment>,
+}
+
+/// A template in the snippet editor, before it is saved: its input fields
+/// and what it renders to with `values` (defaults for the rest).
+#[tauri::command]
+pub fn preview_template(
+    state: State<'_, AppState>,
+    body: String,
+    values: HashMap<String, String>,
+) -> TemplatePreview {
+    let parts = template::parse(&body);
+    let (clipboard, history) = template_inputs(&state, &parts);
+    TemplatePreview {
+        fields: template::fields(&parts),
+        segments: template::render_segments(&parts, &values, &clipboard, &history),
+    }
 }
 
 /// Pastes, copies or opens text the UI derived from an item (a reformatted

@@ -193,16 +193,33 @@ pub fn render(
     Rendered { text, cursor_back }
 }
 
-/// A piece of rendered text; `field` names the variable it came from.
+/// Where a piece of rendered text comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SegmentKind {
+    /// The template's own text.
+    Text,
+    /// A value the user fills in.
+    Input,
+    /// Filled in automatically: date, clipboard, UUID.
+    Auto,
+    /// Where the caret ends up; always empty.
+    Cursor,
+}
+
+/// A piece of rendered text. `name` is the field name of an input, or what
+/// an automatic value is: `date`, `clipboard`, `clipboard:N` or `uuid`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Segment {
     pub text: String,
-    pub field: Option<String>,
+    pub kind: SegmentKind,
+    pub name: Option<String>,
 }
 
 /// Like `render` (without URL encoding), but keeps variable values apart
-/// from the surrounding text for a live preview. `{{cursor}}` becomes an
-/// empty segment with the field name `cursor`.
+/// from the surrounding text for a live preview. A UUID is left empty: the
+/// real one is only made when pasting, so any value shown here would be
+/// wrong.
 pub fn render_segments(
     parts: &[Part],
     values: &HashMap<String, String>,
@@ -211,21 +228,26 @@ pub fn render_segments(
 ) -> Vec<Segment> {
     let now = chrono::Local::now();
     let mut out: Vec<Segment> = Vec::new();
-    let mut push = |text: String, field: Option<String>| match out.last_mut() {
-        Some(last) if field.is_none() && last.field.is_none() => last.text.push_str(&text),
-        _ => out.push(Segment { text, field }),
+    let mut push = |text: String, kind: SegmentKind, name: Option<String>| match out.last_mut() {
+        Some(last) if kind == SegmentKind::Text && last.kind == SegmentKind::Text => last.text.push_str(&text),
+        _ => out.push(Segment { text, kind, name }),
     };
+    let auto = |name: &str| Some(name.to_string());
     for part in parts {
         match part {
-            Part::Text(t) => push(t.clone(), None),
-            Part::Date(f) => push(now.format(&to_strftime(f)).to_string(), None),
-            Part::Clipboard => push(clipboard.to_string(), None),
-            Part::ClipHistory(n) => push(history.get(n - 1).cloned().unwrap_or_default(), None),
-            Part::Uuid => push(uuid::Uuid::new_v4().to_string(), None),
-            Part::Cursor => push(String::new(), Some("cursor".into())),
+            Part::Text(t) => push(t.clone(), SegmentKind::Text, None),
+            Part::Date(f) => push(now.format(&to_strftime(f)).to_string(), SegmentKind::Auto, auto("date")),
+            Part::Clipboard => push(clipboard.to_string(), SegmentKind::Auto, auto("clipboard")),
+            Part::ClipHistory(n) => push(
+                history.get(n - 1).cloned().unwrap_or_default(),
+                SegmentKind::Auto,
+                Some(format!("clipboard:{n}")),
+            ),
+            Part::Uuid => push(String::new(), SegmentKind::Auto, auto("uuid")),
+            Part::Cursor => push(String::new(), SegmentKind::Cursor, None),
             Part::Input(field) => {
                 let value = values.get(&field.name).unwrap_or(&field.default);
-                push(value.clone(), Some(field.name.clone()));
+                push(value.clone(), SegmentKind::Input, Some(field.name.clone()));
             }
         }
     }
@@ -334,24 +356,49 @@ mod tests {
         assert_eq!(r.text, "A-B-C-|now");
     }
 
+    fn shape(segs: &[Segment]) -> Vec<(&str, SegmentKind, Option<&str>)> {
+        segs.iter()
+            .map(|s| (s.text.as_str(), s.kind, s.name.as_deref()))
+            .collect()
+    }
+
     #[test]
     fn segments_mark_variables() {
+        use SegmentKind::*;
         let parts = parse("rg '{{reason:a|b}}' {{file=x.log}}{{cursor}}");
         let mut values = HashMap::new();
         values.insert("reason".to_string(), "b".to_string());
         let segs = render_segments(&parts, &values, "", &[]);
-        let shape: Vec<(&str, Option<&str>)> = segs
-            .iter()
-            .map(|s| (s.text.as_str(), s.field.as_deref()))
-            .collect();
         assert_eq!(
-            shape,
+            shape(&segs),
             [
-                ("rg '", None),
-                ("b", Some("reason")),
-                ("' ", None),
-                ("x.log", Some("file")),
-                ("", Some("cursor")),
+                ("rg '", Text, None),
+                ("b", Input, Some("reason")),
+                ("' ", Text, None),
+                ("x.log", Input, Some("file")),
+                ("", Cursor, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn segments_mark_automatic_values() {
+        use SegmentKind::*;
+        let parts = parse("{{clipboard}}/{{clipboard:2}}/{{uuid}}/{{date:yyyy}}");
+        let history = ["new", "old"].map(String::from);
+        let segs = render_segments(&parts, &HashMap::new(), "now", &history);
+        let year = chrono::Local::now().format("%Y").to_string();
+        assert_eq!(
+            shape(&segs),
+            [
+                ("now", Auto, Some("clipboard")),
+                ("/", Text, None),
+                ("old", Auto, Some("clipboard:2")),
+                ("/", Text, None),
+                // The real UUID is only made when pasting.
+                ("", Auto, Some("uuid")),
+                ("/", Text, None),
+                (year.as_str(), Auto, Some("date")),
             ]
         );
     }
