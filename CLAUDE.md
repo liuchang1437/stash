@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Stash (随手) is a Windows tray app built with Tauri 2 (Rust) and SvelteKit/Svelte 5 in SPA mode. Alt+Space opens a popover in the upper middle of the screen (or, with `followCaret`, at the text caret of the focused app) that searches clipboard history and Markdown snippets together, evaluates calculator expressions, and pastes the chosen result back into that app. All UI text and the README are written in Chinese. The UI uses a dark, monospace "terminal" theme (`src/app.css`).
+Stash (随手) is a Windows tray app built with Tauri 2 (Rust) and SvelteKit/Svelte 5 in SPA mode. Alt+Space opens a popover in the upper middle of the screen (or, with `followCaret`, at the text caret of the focused app) that searches clipboard history and Markdown snippets together, evaluates calculator expressions, and pastes the chosen result back into that app. All UI text is written in Chinese. The README and the user guide come in English (`README.md`, `docs/guide.md`) and Chinese (`README.zh-CN.md`, `docs/guide.zh-CN.md`); keep both languages in sync when you change behavior they describe. The UI uses a dark, monospace "terminal" theme (`src/app.css`).
 
 ## Commands
 
@@ -53,7 +53,7 @@ cd src-tauri && cargo test calc::tests::modulo   # a single test
 
 **Clipboard history numbering is shared.** `{{clipboard:N}}` in templates and `$N` in calculator expressions both mean the N-th most recently copied *or used* clip, with 1 = latest. Both resolve through `Index::recent_clips`. Pinning does not affect this order.
 
-**Template engine** (`template.rs`): `parse` → `fields` → `render`. With `url_encode` (open mode), a value is percent-encoded only when the rendered text before it already contains `://`, so `https://x/s?q={{q}}` gets encoded but a bare `{{url}}` does not. If you add a variable or change the syntax, also update `src/lib/template.ts` and the README table. In that file, `tokens` mirrors `parse`/`parse_var` for highlighting and error messages, and `VARIABLES` lists what the editor offers.
+**Template engine** (`template.rs`): `parse` → `fields` → `render`. With `url_encode` (open mode), a value is percent-encoded only when the rendered text before it already contains `://`, so `https://x/s?q={{q}}` gets encoded but a bare `{{url}}` does not. If you add a variable or change the syntax, also update `src/lib/template.ts` and the variable tables in `docs/guide.md` and `docs/guide.zh-CN.md`. In `template.ts`, `tokens` mirrors `parse`/`parse_var` for highlighting and error messages, and `VARIABLES` lists what the editor offers.
 
 **Snippet editor** (`SnippetEditor.svelte`). It uses CodeMirror 6, set up in `src/lib/editor.ts`. The component imports that module dynamically, so only the manage window loads CodeMirror. Typing `{{` completes a variable. Ctrl+K opens a menu that inserts a variable, or turns the selected text into one (the selection becomes the default). The side panel calls `preview_template(body, values)` on the unsaved text to list the fields and render the result with test values.
 
