@@ -625,6 +625,7 @@ pub fn run() {
             commands::calc_detail,
             commands::preview_snippet,
             commands::preview_template,
+            commands::editable_text,
             commands::activate_text,
             commands::open_explorer,
             commands::open_manage,

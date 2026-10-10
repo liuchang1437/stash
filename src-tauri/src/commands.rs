@@ -462,6 +462,43 @@ pub fn preview_snippet(
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditableText {
+    text: String,
+    /// Characters after `{{cursor}}`, as in `template::Rendered`.
+    cursor_back: usize,
+}
+
+/// The whole text an item pastes, for editing it in the preview before
+/// pasting: a clip's full body (the preview is truncated), or a snippet
+/// rendered with `values` (defaults for the rest), UUIDs included.
+#[tauri::command]
+pub fn editable_text(
+    state: State<'_, AppState>,
+    key: String,
+    values: HashMap<String, String>,
+) -> CmdResult<EditableText> {
+    let item = parse_key(&key)?;
+    let body = state
+        .index
+        .read()
+        .unwrap()
+        .get(&item)
+        .map(|e| e.body.clone())
+        .ok_or("条目不存在")?;
+    if !matches!(item, ItemRef::Snippet(_)) {
+        return Ok(EditableText { text: body, cursor_back: 0 });
+    }
+    let parts = template::parse(&body);
+    let (clipboard, history) = template_inputs(&state, &parts);
+    let rendered = template::render(&parts, &values, &clipboard, &history, false);
+    Ok(EditableText {
+        text: rendered.text,
+        cursor_back: rendered.cursor_back,
+    })
+}
+
+#[derive(Serialize)]
 pub struct TemplatePreview {
     fields: Vec<Field>,
     segments: Vec<Segment>,

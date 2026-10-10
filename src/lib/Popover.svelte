@@ -48,7 +48,18 @@
   /** A `#…` completion: a scope or a snippet tag. */
   type Suggestion = { name: string; note: string; filter: Filter };
 
-  type Phase = "list" | "fill" | "menu";
+  type Phase = "list" | "fill" | "menu" | "edit";
+  /** The text about to be pasted, edited in the preview; the item itself stays as it is. */
+  type Draft = {
+    key: string;
+    text: string;
+    /** The selection it starts with (UTF-16): what was clicked, or where pasting would leave the caret. */
+    caret: [number, number];
+    /** The original used CRLF; the textarea only has LF. */
+    crlf: boolean;
+    /** Where Esc goes back to. */
+    back: "list" | "fill";
+  };
   type Fill = {
     key: string;
     title: string;
@@ -66,6 +77,7 @@
   let calcFormat = $state(0);
   let phase = $state<Phase>("list");
   let fill = $state<Fill | null>(null);
+  let draft = $state<Draft | null>(null);
   let peekOpen = $state(false);
   let peekRaw = $state(false);
   let menuIndex = $state(0);
@@ -264,6 +276,7 @@
   function closePanels() {
     phase = "list";
     fill = null;
+    draft = null;
     peekOpen = shown.autoPeek;
     subIndex = -1;
   }
@@ -279,7 +292,8 @@
       query = "";
       filter = ALL;
     }
-    input?.focus();
+    // The input is disabled while filling in or editing; focus it once re-enabled.
+    tick().then(() => input?.focus());
   }
 
   /** Reopened shortly after closing: keep the query and scope, the query selected so typing replaces it. */
@@ -288,8 +302,10 @@
     closePanels();
     selected = 0;
     refresh();
-    input?.focus();
-    input?.select();
+    tick().then(() => {
+      input?.focus();
+      input?.select();
+    });
   }
 
   onMount(() => {
@@ -460,6 +476,52 @@
   }
 
   // -------------------------------------------------------------------------
+  // Editing before pasting (a click into the preview, or F2): the preview
+  // turns into a textarea holding exactly what would be pasted, a snippet with
+  // the values filled in so far. Nothing is saved, and the edited text is
+  // pasted like a transformation, so it doesn't enter the history either.
+
+  /** `pick` places the caret where the preview was clicked. */
+  async function startEdit(pick?: (text: string) => [number, number]) {
+    const hit = current;
+    if (!hit || hit.kind === "calc" || phase === "edit") return;
+    const filling = phase === "fill" && fill?.key === hit.key ? fill : null;
+    const values = filling ? $state.snapshot(filling.values) : {};
+    const result = await run(() => api.editableText(hit.key, values));
+    // The selection may have moved on meanwhile.
+    if (!result || current?.key !== hit.key) return;
+    const text = result.text.replace(/\r\n/g, "\n");
+    // `cursorBack` counts characters after `{{cursor}}`, not UTF-16 units.
+    const chars = Array.from(text);
+    const end = chars.slice(0, chars.length - result.cursorBack).join("").length;
+    const caret = pick ? pick(text) : ([end, end] as [number, number]);
+    draft = { key: hit.key, text, caret, crlf: result.text.includes("\r\n"), back: filling ? "fill" : "list" };
+    phase = "edit";
+    peekOpen = true;
+  }
+
+  /** Drops the edits and goes back to the list or the fields. */
+  function cancelEdit() {
+    phase = draft?.back === "fill" && fill ? "fill" : "list";
+    draft = null;
+    tick().then(() => {
+      if (phase === "fill" && fill) focusField(Math.max(0, fill.fields.findIndex((f) => f.name === fill!.focus)));
+      else input.focus();
+    });
+  }
+
+  async function submitDraft(mode: Mode) {
+    if (!draft) return;
+    const text = draft.crlf ? draft.text.replace(/\n/g, "\r\n") : draft.text;
+    await run(() => api.activateText(draft!.key, text, mode));
+  }
+
+  // Selecting another row (a click) leaves the edits behind.
+  $effect(() => {
+    if (draft && current?.key !== draft.key) closePanels();
+  });
+
+  // -------------------------------------------------------------------------
   // Ctrl+K menu
 
   type Entry = MenuItem & { run: (sub?: number) => void };
@@ -494,6 +556,7 @@
         run: (sub) => sub !== undefined && pasteText(transforms[sub].apply(hit.preview), "paste"),
       });
     }
+    items.push({ id: "draft", label: "修改后粘贴", keys: "F2", run: () => startEdit() });
     if (!peekShown) {
       items.push({ id: "peek", label: "预览全文", keys: "→", run: () => ((phase = "list"), (peekOpen = true)) });
     }
@@ -549,6 +612,7 @@
   /** A key press written the way the menu's shortcut column shows it. */
   function shortcutLabel(e: KeyboardEvent): string | null {
     const ctrl = e.ctrlKey || e.metaKey;
+    if (e.key === "F2") return "F2";
     if (e.key === "Enter") return ctrl ? "^↵" : e.shiftKey ? "⇧↵" : null;
     if (ctrl && /^[a-z]$/i.test(e.key)) return "^" + e.key.toUpperCase();
     return null;
@@ -597,9 +661,20 @@
       const i = fill.fields.findIndex((f) => f.name === fill!.focus);
       const n = fill.fields.length;
       focusField((i + (e.shiftKey ? n - 1 : 1)) % n);
+    } else if (e.key === "F2") {
+      startEdit();
     } else {
       return;
     }
+    e.preventDefault();
+  }
+
+  function editKeydown(e: KeyboardEvent) {
+    if (e.isComposing) return;
+    // Enter alone is a new line.
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitDraft(e.shiftKey ? "copy" : "paste");
+    else if (e.key === "Escape") cancelEdit();
+    else return;
     e.preventDefault();
   }
 
@@ -651,6 +726,7 @@
         activate("paste", n);
       }
     } else if (ctrl && e.key === "k") openMenu();
+    else if (e.key === "F2") startEdit();
     else if (e.key === "Tab") {
       if (current?.kind === "calc") calcFormat = (calcFormat + (e.shiftKey ? calcFormats.length - 1 : 1)) % calcFormats.length;
       else if (peekOpen) peekRaw = !peekRaw;
@@ -682,6 +758,7 @@
   function onkeydown(e: KeyboardEvent) {
     if (phase === "menu") menuKeydown(e);
     else if (phase === "fill") fillKeydown(e);
+    else if (phase === "edit") editKeydown(e);
     else listKeydown(e);
   }
 
@@ -748,7 +825,7 @@
         {placeholder}
         spellcheck="false"
         autocomplete="off"
-        disabled={phase === "fill"}
+        disabled={phase === "fill" || phase === "edit"}
       />
       {#if shown.anchor === "mouse"}<span class="note">未找到光标</span>{/if}
       <span class="count">{countLabel}</span>
@@ -802,7 +879,7 @@
             {/if}
           </li>
         {:else}
-          <li class="item" class:sel class:dim={phase === "fill" && !sel} role="option" aria-selected={sel} data-index={i}>
+          <li class="item" class:sel class:dim={(phase === "fill" || phase === "edit") && !sel} role="option" aria-selected={sel} data-index={i}>
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="row" onclick={() => (selected = i)} ondblclick={() => activate("paste", i)}>
             <span class="num">{sel ? "▸" : i < 9 ? String(i + 1).padStart(2, "0") : "  "}</span>
@@ -867,6 +944,10 @@
         <span class="seg msg">{status}</span>
       {:else if confirmDelete}
         <span class="seg danger">再按 ^D 删除这个 snippet 文件 · Esc 取消</span>
+      {:else if phase === "edit"}
+        <span class="seg primary">^↵ 粘贴 → {target}</span>
+        <span class="seg">^⇧↵ 复制</span>
+        <span class="seg">Esc 取消修改</span>
       {:else if phase === "fill"}
         <span class="seg primary">↵ 粘贴 → {target}</span>
         <span class="seg">⇧↵ 复制</span>
@@ -915,6 +996,9 @@
         onToggle={() => (peekRaw = !peekRaw)}
         rendered={filling ? filling.segments : current.rendered}
         focus={filling ? filling.focus : null}
+        draft={draft?.key === current.key ? draft : null}
+        onDraft={(text) => draft && (draft.text = text)}
+        onEdit={startEdit}
       />
     </div>
   {/if}
