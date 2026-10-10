@@ -2,6 +2,7 @@
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount, tick } from "svelte";
   import ActionMenu, { type MenuItem } from "./ActionMenu.svelte";
+  import { t } from "./i18n.svelte";
   import Peek from "./Peek.svelte";
   import { MARGIN, placePanels } from "./layout";
   import {
@@ -23,7 +24,7 @@
     appName,
     detectKind,
     isSolana,
-    LABELS,
+    kindLabel,
     lineCount,
     shortApp,
     splitMarks,
@@ -37,10 +38,10 @@
   const NEEDED_BELOW = 380;
 
   /** Scopes offered by `#` besides snippet tags. */
-  const SCOPES: { name: string; label: string; filter: Filter }[] = [
-    { name: "clip", label: "剪贴板", filter: { source: "clip", tag: null } },
-    { name: "snip", label: "Snippets", filter: { source: "snippet", tag: null } },
-    { name: "pin", label: "置顶", filter: { source: "pinned", tag: null } },
+  const SCOPES: { name: "clip" | "snip" | "pin"; filter: Filter }[] = [
+    { name: "clip", filter: { source: "clip", tag: null } },
+    { name: "snip", filter: { source: "snippet", tag: null } },
+    { name: "pin", filter: { source: "pinned", tag: null } },
   ];
   /** What Ctrl+Tab cycles through. */
   const CYCLE: Filter["source"][] = ["all", "clip", "snippet"];
@@ -117,7 +118,8 @@
 
   function scopeLabel(f: Filter): string | null {
     if (f.tag) return "#" + f.tag;
-    return SCOPES.find((s) => s.filter.source === f.source)?.label ?? null;
+    const s = SCOPES.find((s) => s.filter.source === f.source);
+    return s ? t.popover.scopes[s.name] : null;
   }
 
   const scope = $derived(scopeLabel(filter));
@@ -128,11 +130,11 @@
     if (!m) return [];
     const typed = m[1].toLowerCase();
     const all: Suggestion[] = [
-      ...SCOPES.map((s) => ({ name: s.name, note: s.label, filter: s.filter })),
-      ...tags.map((t) => ({
-        name: t.name,
-        note: `标签 · ${t.count} 个 snippet`,
-        filter: { source: "snippet", tag: t.name } as Filter,
+      ...SCOPES.map((s) => ({ name: s.name, note: t.popover.scopes[s.name], filter: s.filter })),
+      ...tags.map((tag) => ({
+        name: tag.name,
+        note: t.popover.tagNote(tag.count),
+        filter: { source: "snippet", tag: tag.name } as Filter,
       })),
     ];
     const starts = (s: Suggestion) => Number(s.name.toLowerCase().startsWith(typed));
@@ -144,31 +146,30 @@
   const groups = $derived(filter.source === "clip" && !query.trim() ? hits.map(dayGroup) : null);
 
   function dayGroup(hit: Hit): string {
-    if (hit.pinned) return "置顶";
+    if (hit.pinned) return t.popover.groups.pinned;
     const midnight = new Date().setHours(0, 0, 0, 0) / 1000;
-    if (hit.lastUsedAt >= midnight) return "今天";
-    if (hit.lastUsedAt >= midnight - 86400) return "昨天";
-    return "更早";
+    if (hit.lastUsedAt >= midnight) return t.popover.groups.today;
+    if (hit.lastUsedAt >= midnight - 86400) return t.popover.groups.yesterday;
+    return t.popover.groups.earlier;
   }
 
   const placeholder = $derived.by(() => {
-    if (!scope) return "搜索，# 筛选，或输入算式 2*$1";
-    // A space between Chinese and Latin text.
-    return /^[\x00-\x7f]/.test(scope) ? `在 ${scope} 中搜索` : `在${scope}中搜索`;
+    if (!scope) return t.popover.placeholder;
+    return t.popover.searchIn(scope);
   });
 
   const countLabel = $derived.by(() => {
-    if (completing) return "筛选";
-    if (!query && !scope) return "^Tab 切换类别";
+    if (completing) return t.popover.filtering;
+    if (!query && !scope) return t.popover.switchScope;
     const n = hits.filter((h) => h.kind !== "calc").length;
-    return `${n}${n >= SEARCH_LIMIT ? "+" : ""} 条`;
+    return t.popover.results(`${n}${n >= SEARCH_LIMIT ? "+" : ""}`);
   });
 
   const emptyText = $derived.by(() => {
-    if (query) return "没有匹配的结果";
-    if (filter.tag || filter.source === "snippet") return "没有 snippet，^N 新建一个";
-    if (filter.source === "pinned") return "没有置顶的记录，^P 置顶选中的一条";
-    return "还没有记录，复制点什么试试";
+    if (query) return t.popover.noMatch;
+    if (filter.tag || filter.source === "snippet") return t.popover.noSnippets;
+    if (filter.source === "pinned") return t.popover.noPinned;
+    return t.popover.noClips;
   });
 
   function applyFilter(f: Filter) {
@@ -182,7 +183,7 @@
   }
 
   function loadTags() {
-    api.snippetTags().then((t) => (tags = t));
+    api.snippetTags().then((list) => (tags = list));
   }
 
   // -------------------------------------------------------------------------
@@ -222,7 +223,7 @@
     const grouped = groupDigits(raw);
     if (grouped !== raw) list.push({ label: grouped, text: grouped });
     const expr = `${calc.expression} = ${raw}`;
-    list.push({ label: "算式 = 结果", text: expr });
+    list.push({ label: t.popover.calcExpression, text: expr });
     return list;
   });
 
@@ -376,7 +377,7 @@
       return;
     }
     if (mode === "open" && hit.kind === "clip" && k !== "url") {
-      flash("这条不是网址");
+      flash(t.popover.notUrl);
       return;
     }
     const result = await run(() => api.activate(hit.key, mode));
@@ -391,7 +392,7 @@
     if (current?.kind !== "clip") return;
     const pinned = await run(() => api.togglePin(current!.key));
     if (pinned !== undefined) {
-      flash(pinned ? "已置顶" : "已取消置顶");
+      flash(pinned ? t.popover.pinned : t.popover.unpinned);
       refresh();
     }
   }
@@ -405,7 +406,7 @@
     }
     confirmDelete = null;
     await run(() => api.deleteItem(hit.key));
-    flash("已删除");
+    flash(t.popover.deleted);
     refresh();
   }
 
@@ -532,42 +533,42 @@
     if (!hit || !k) return [];
     const items: Entry[] = [];
     if (hit.kind === "calc") {
-      items.push({ id: "paste", label: "粘贴", keys: "↵", run: () => activate("paste") });
-      items.push({ id: "copy", label: "复制", keys: "⇧↵", run: () => activate("copy") });
+      items.push({ id: "paste", label: t.action.paste, keys: "↵", run: () => activate("paste") });
+      items.push({ id: "copy", label: t.action.copy, keys: "⇧↵", run: () => activate("copy") });
       items.push({
         id: "as",
-        label: "粘贴为…",
+        label: t.action.pasteAs,
         sub: calcFormats.map((f, i) => ({ id: String(i), label: f.label, preview: f.text })),
         run: (sub) => sub !== undefined && pasteText(calcFormats[sub].text, "paste"),
       });
       return items;
     }
     const snippet = hit.kind === "snippet";
-    items.push({ id: "paste", label: snippet ? "填写并粘贴" : "粘贴", keys: "↵", run: () => activate("paste") });
-    items.push({ id: "copy", label: "复制", keys: "⇧↵", run: () => activate("copy") });
-    if (isSolana(k)) items.push({ id: "solscan", label: "在 Solscan 打开", keys: "^↵", run: () => activate("open") });
-    else if (k === "url" || snippet) items.push({ id: "open", label: "在浏览器打开", keys: "^↵", run: () => activate("open") });
+    items.push({ id: "paste", label: snippet ? t.action.fillAndPaste : t.action.paste, keys: "↵", run: () => activate("paste") });
+    items.push({ id: "copy", label: t.action.copy, keys: "⇧↵", run: () => activate("copy") });
+    if (isSolana(k)) items.push({ id: "solscan", label: t.action.openSolscan, keys: "^↵", run: () => activate("open") });
+    else if (k === "url" || snippet) items.push({ id: "open", label: t.action.openBrowser, keys: "^↵", run: () => activate("open") });
     if (!snippet) {
       const transforms = transformsFor(k);
       items.push({
         id: "as",
-        label: "粘贴为…",
-        sub: transforms.map((t) => ({ id: t.id, label: t.label, preview: t.apply(hit.preview).replace(/\s+/g, " ").slice(0, 60) })),
+        label: t.action.pasteAs,
+        sub: transforms.map((tf) => ({ id: tf.id, label: tf.label, preview: tf.apply(hit.preview).replace(/\s+/g, " ").slice(0, 60) })),
         run: (sub) => sub !== undefined && pasteText(transforms[sub].apply(hit.preview), "paste"),
       });
     }
-    items.push({ id: "draft", label: "修改后粘贴", keys: "F2", run: () => startEdit() });
+    items.push({ id: "draft", label: t.action.editThenPaste, keys: "F2", run: () => startEdit() });
     if (!peekShown) {
-      items.push({ id: "peek", label: "预览全文", keys: "→", run: () => ((phase = "list"), (peekOpen = true)) });
+      items.push({ id: "peek", label: t.action.preview, keys: "→", run: () => ((phase = "list"), (peekOpen = true)) });
     }
     if (snippet) {
-      items.push({ id: "edit", label: "编辑", keys: "^E", sep: true, run: () => api.openManage("edit", hit.key) });
-      items.push({ id: "new", label: "新建 Snippet", keys: "^N", run: newSnippet });
+      items.push({ id: "edit", label: t.action.edit, keys: "^E", sep: true, run: () => api.openManage("edit", hit.key) });
+      items.push({ id: "new", label: t.action.newSnippet, keys: "^N", run: newSnippet });
     } else {
-      items.push({ id: "pin", label: hit.pinned ? "取消置顶" : "置顶", keys: "^P", sep: true, run: togglePin });
-      items.push({ id: "save", label: "存为 Snippet", keys: "^N", run: newSnippet });
+      items.push({ id: "pin", label: hit.pinned ? t.action.unpin : t.action.pin, keys: "^P", sep: true, run: togglePin });
+      items.push({ id: "save", label: t.action.saveAsSnippet, keys: "^N", run: newSnippet });
     }
-    items.push({ id: "delete", label: "删除", keys: "^D", danger: true, sep: true, run: remove });
+    items.push({ id: "delete", label: t.action.delete, keys: "^D", danger: true, sep: true, run: remove });
     return items;
   });
 
@@ -764,19 +765,19 @@
 
   function excerpt(hit: Hit, k: Kind): string {
     if (hit.kind === "snippet") {
-      const tags = hit.tags.map((t) => "#" + t).join(" ");
-      return [tags, hit.useCount ? `用过 ${hit.useCount} 次` : "", "^E 编辑"].filter(Boolean).join(" · ");
+      const tags = hit.tags.map((tag) => "#" + tag).join(" ");
+      return [tags, hit.useCount ? t.popover.usedTimes(hit.useCount) : "", `^E ${t.action.edit}`].filter(Boolean).join(" · ");
     }
     if (k === "lines") {
       // The title is the first line, or the line that matched the query.
       const lines = hit.preview.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       const other = lines[0]?.startsWith(hit.title) ? lines[1] : lines[0];
-      return `${lineCount(hit.preview)} 行 · ${other ?? ""}`;
+      return `${t.count.lines(lineCount(hit.preview))} · ${other ?? ""}`;
     }
-    const parts = [LABELS[k], `${hit.chars.toLocaleString()} 字`];
-    if (k === "table") parts.push("→ 看排版");
+    const parts = [kindLabel(k), t.count.chars(hit.chars)];
+    if (k === "table") parts.push(t.popover.seeLayout);
     if (isSolana(k)) parts.push("^↵ Solscan");
-    if (k === "url") parts.push("^↵ 打开");
+    if (k === "url") parts.push(`^↵ ${t.popover.open}`);
     return parts.join(" · ");
   }
 
@@ -811,7 +812,7 @@
         <button
           class="scope"
           tabindex="-1"
-          title="Backspace 回到全部"
+          title={t.popover.backToAll}
           onclick={() => {
             filter = ALL;
             input.focus();
@@ -827,7 +828,7 @@
         autocomplete="off"
         disabled={phase === "fill" || phase === "edit"}
       />
-      {#if shown.anchor === "mouse"}<span class="note">未找到光标</span>{/if}
+      {#if shown.anchor === "mouse"}<span class="note">{t.popover.caretNotFound}</span>{/if}
       <span class="count">{countLabel}</span>
     </div>
 
@@ -874,7 +875,7 @@
                 {#each calcFormats as f, j}
                   <button class:on={j === calcFormat} onclick={() => ((calcFormat = j), activate("paste"))}>{f.label}</button>
                 {/each}
-                <span class="fmt-hint">Tab 换格式</span>
+                <span class="fmt-hint">{t.popover.nextFormat}</span>
               </div>
             {/if}
           </li>
@@ -885,7 +886,7 @@
             <span class="num">{sel ? "▸" : i < 9 ? String(i + 1).padStart(2, "0") : "  "}</span>
             <span class="tag {k}">{TAGS[k]}</span>
             {#if hit.pinned}<span class="pin">◆</span>{/if}
-            <span class="title">{@render marked(splitMarks(hit.title || "（空白）", hit.titleMarks))}</span>
+            <span class="title">{@render marked(splitMarks(hit.title || t.popover.blank, hit.titleMarks))}</span>
             <span class="src">{hit.kind === "snippet" ? "snippet" : `${shortApp(hit.source)} ${shortTime(hit.lastUsedAt)}`}</span>
           </div>
           {#if sel && phase === "fill" && fill}
@@ -943,37 +944,37 @@
       {#if status}
         <span class="seg msg">{status}</span>
       {:else if confirmDelete}
-        <span class="seg danger">再按 ^D 删除这个 snippet 文件 · Esc 取消</span>
+        <span class="seg danger">{t.popover.confirmDelete}</span>
       {:else if phase === "edit"}
-        <span class="seg primary">^↵ 粘贴 → {target}</span>
-        <span class="seg">^⇧↵ 复制</span>
-        <span class="seg">Esc 取消修改</span>
+        <span class="seg primary">^↵ {t.action.paste} → {target}</span>
+        <span class="seg">^⇧↵ {t.action.copy}</span>
+        <span class="seg">Esc {t.action.cancelEdit}</span>
       {:else if phase === "fill"}
-        <span class="seg primary">↵ 粘贴 → {target}</span>
-        <span class="seg">⇧↵ 复制</span>
-        <span class="seg">Tab 下一项</span>
-        <span class="seg">Esc 返回</span>
+        <span class="seg primary">↵ {t.action.paste} → {target}</span>
+        <span class="seg">⇧↵ {t.action.copy}</span>
+        <span class="seg">Tab {t.action.next}</span>
+        <span class="seg">Esc {t.action.back}</span>
       {:else if phase === "menu"}
-        <span class="seg primary">↵ 执行</span>
-        <span class="seg">↑↓ 选择</span>
-        <span class="seg">→ 子菜单</span>
-        <span class="seg">Esc 关闭</span>
+        <span class="seg primary">↵ {t.action.run}</span>
+        <span class="seg">↑↓ {t.action.select}</span>
+        <span class="seg">→ {t.action.submenu}</span>
+        <span class="seg">Esc {t.action.close}</span>
       {:else if completing}
-        <span class="seg primary">↵ 筛选</span>
-        <span class="seg">↑↓ 选择</span>
-        <span class="seg">Esc 取消</span>
+        <span class="seg primary">↵ {t.action.filter}</span>
+        <span class="seg">↑↓ {t.action.select}</span>
+        <span class="seg">Esc {t.action.cancel}</span>
       {:else if current?.kind === "calc"}
-        <span class="seg primary">↵ 粘贴 {calcFormats[calcFormat]?.label ?? ""}</span>
-        <span class="seg">⇧↵ 复制</span>
-        <span class="seg">^K 操作</span>
+        <span class="seg primary">↵ {t.action.paste} {calcFormats[calcFormat]?.label ?? ""}</span>
+        <span class="seg">⇧↵ {t.action.copy}</span>
+        <span class="seg">^K {t.action.actions}</span>
       {:else if current}
-        <span class="seg primary">↵ 粘贴 → {target}</span>
-        <span class="seg">⇧↵ 复制</span>
-        <span class="seg">{peekShown ? "← 收起" : "→ 预览"}</span>
-        <span class="seg">^K 操作</span>
+        <span class="seg primary">↵ {t.action.paste} → {target}</span>
+        <span class="seg">⇧↵ {t.action.copy}</span>
+        <span class="seg">{peekShown ? `← ${t.action.collapse}` : `→ ${t.action.peek}`}</span>
+        <span class="seg">^K {t.action.actions}</span>
       {:else}
-        <span class="seg">^N 新建 Snippet</span>
-        <span class="seg">^, 设置</span>
+        <span class="seg">^N {t.action.newSnippet}</span>
+        <span class="seg">^, {t.action.settings}</span>
       {/if}
     </div>
   </div>

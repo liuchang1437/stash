@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { relativeTime, type Hit, type Segment } from "./api";
-  import { appName, LABELS, lineCount, markTerms, parseBlocks, type Kind } from "./kinds";
+  import { t } from "./i18n.svelte";
+  import { appName, kindLabel, lineCount, markTerms, parseBlocks, type Kind } from "./kinds";
   import Rendered from "./Rendered.svelte";
   import { templatePieces } from "./template";
 
@@ -170,22 +171,22 @@
 
 <section class="peek">
   <header>
-    <span class="label">{draft ? "修改后粘贴" : filling ? "将粘贴" : LABELS[kind]}</span>
+    <span class="label">{draft ? t.peek.edited : filling ? t.peek.willPaste : kindLabel(kind)}</span>
     {#if draft}
-      <span class="muted">{draft.text.length.toLocaleString()} 字 · {lineCount(draft.text)} 行 · 原文不变</span>
+      <span class="muted">{t.count.chars(draft.text.length)} · {t.count.lines(lineCount(draft.text))} · {t.peek.originalKept}</span>
     {:else if !filling}
-      <span class="muted">{hit.chars.toLocaleString()} 字 · {lineCount(hit.preview)} 行</span>
+      <span class="muted">{t.count.chars(hit.chars)} · {t.count.lines(lineCount(hit.preview))}</span>
     {/if}
     <span class="spacer"></span>
     {#if !editing && (hasTable || (rendered && !filling))}
-      <div class="seg" role="group" aria-label="显示方式">
-        <button class:on={!raw} onclick={() => raw && onToggle()}>{hasTable ? "排版" : "结果"}</button>
-        <button class:on={raw} onclick={() => !raw && onToggle()}>{hasTable ? "原文" : "模板"}</button>
+      <div class="seg" role="group" aria-label={t.peek.view}>
+        <button class:on={!raw} onclick={() => raw && onToggle()}>{hasTable ? t.peek.layout : t.peek.result}</button>
+        <button class:on={raw} onclick={() => !raw && onToggle()}>{hasTable ? t.peek.raw : t.peek.template}</button>
       </div>
       <kbd>Tab</kbd>
     {/if}
     {#if onEdit && !editing}
-      <button class="edit" title="临时修改后再粘贴，原文不变；也可以直接点正文" onclick={() => onEdit()}>修改</button>
+      <button class="edit" title={t.peek.editTitle} onclick={() => onEdit()}>{t.peek.edit}</button>
       <kbd>F2</kbd>
     {/if}
   </header>
@@ -206,7 +207,7 @@
         oninput={(e) => onDraft?.(e.currentTarget.value)}
         onkeydown={editorKeydown}
         spellcheck="false"
-        aria-label="修改后粘贴的文字"
+        aria-label={t.peek.editLabel}
       ></textarea>
     {:else if showResult && rendered}
       <pre class="template"><Rendered segments={rendered} {focus} terms={filling ? [] : hit.terms} /></pre>
@@ -240,7 +241,7 @@
           </div>
         {/if}
       {/each}
-      {#if truncated}<p class="muted more">… 只显示前 {hit.preview.length.toLocaleString()} 字</p>{/if}
+      {#if truncated}<p class="muted more">{t.peek.truncated(hit.preview.length)}</p>{/if}
     {/if}
   </div>
 
@@ -254,7 +255,7 @@
     {/if}
     <span>uses=<b>{hit.useCount}</b></span>
     <span class="spacer"></span>
-    {#if draft}<span class="muted">Esc 取消修改</span>{:else if !filling}<span class="muted">← 收起</span>{/if}
+    {#if draft}<span class="muted">Esc {t.action.cancelEdit}</span>{:else if !filling}<span class="muted">← {t.action.collapse}</span>{/if}
   </footer>
 </section>
 

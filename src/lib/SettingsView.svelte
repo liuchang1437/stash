@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { api, type Settings } from "./api";
   import CloseButton from "./CloseButton.svelte";
+  import { t } from "./i18n.svelte";
 
   let { onDone }: { onDone: () => void } = $props();
 
@@ -66,7 +67,7 @@
     if (e.shiftKey) parts.push("Shift");
     if (e.metaKey) parts.push("Super");
     if (!parts.length && !/^F\d+$/.test(key)) {
-      error = "快捷键至少需要一个修饰键（Ctrl / Alt / Shift / Win）";
+      error = t.settings.needsModifier;
       return;
     }
     error = "";
@@ -106,57 +107,67 @@
 <div class="settings">
   <!-- The window has no title bar: the header drags it. -->
   <header data-tauri-drag-region>
-    <h1 data-tauri-drag-region>设置</h1>
+    <h1 data-tauri-drag-region>{t.settings.title}</h1>
     <CloseButton onClose={onDone} />
   </header>
 
   {#if settings}
     <div class="form">
       <label>
-        <span>唤起快捷键</span>
+        <span>{t.settings.language}</span>
+        <select class="field lang" bind:value={settings.config.language}>
+          <option value="">{t.settings.followSystem}</option>
+          <!-- Each language is named in itself. -->
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+
+      <label>
+        <span>{t.settings.hotkey}</span>
         <input
           class="field hotkey"
           class:recording={recording === "hotkey"}
           readonly
-          value={recording === "hotkey" ? "请按下新的快捷键…" : settings.config.hotkey}
+          value={recording === "hotkey" ? t.settings.pressKeys : settings.config.hotkey}
           onfocus={() => (recording = "hotkey")}
           onblur={() => (recording = null)}
           onkeydown={(e) => recordHotkey(e, "hotkey")}
         />
-        <small>点击后直接按下组合键。默认 Alt+Space。</small>
+        <small>{t.settings.hotkeyHint}</small>
       </label>
 
       <label class="check">
         <input type="checkbox" bind:checked={settings.config.followCaret} />
-        <span>在输入光标旁边打开（默认在屏幕中上方；找不到光标时跟随鼠标）</span>
+        <span>{t.settings.followCaret}</span>
       </label>
 
       <label class="check">
         <input type="checkbox" bind:checked={settings.config.autoPeek} />
-        <span>打开时自动展开预览（关闭后按 → 展开）</span>
+        <span>{t.settings.autoPeek}</span>
       </label>
 
       <label class="check">
         <input type="checkbox" bind:checked={settings.config.englishInput} />
-        <span>打开时切换到英文输入（搜索支持拼音，按 Shift 可切回中文）</span>
+        <span>{t.settings.englishInput}</span>
       </label>
 
       <label>
-        <span>粘贴后「换一条」快捷键</span>
+        <span>{t.settings.swapHotkey}</span>
         <input
           class="field hotkey"
           class:recording={recording === "swapHotkey"}
           readonly
-          value={recording === "swapHotkey" ? "请按下新的快捷键…" : settings.config.swapHotkey || "（已关闭）"}
+          value={recording === "swapHotkey" ? t.settings.pressKeys : settings.config.swapHotkey || t.settings.off}
           onfocus={() => (recording = "swapHotkey")}
           onblur={() => (recording = null)}
           onkeydown={(e) => recordHotkey(e, "swapHotkey")}
         />
-        <small>粘贴后的几秒内按住 Alt 连按 V 选择更早的记录，松开 Alt 原地替换。只在提示条出现时生效；按 Backspace 关闭。</small>
+        <small>{t.settings.swapHint}</small>
       </label>
 
       <label>
-        <span>Snippets 目录</span>
+        <span>{t.settings.snippetsDir}</span>
         <div class="row">
           <input
             class="field"
@@ -164,37 +175,37 @@
             placeholder={settings.defaultSnippetsDir}
             spellcheck="false"
           />
-          <button class="btn" onclick={() => api.openSnippetsDir()}>打开</button>
+          <button class="btn" onclick={() => api.openSnippetsDir()}>{t.common.open}</button>
         </div>
-        <small>每个 snippet 是一个 .md 文件。把这个目录放进 OneDrive / 坚果云 / git 即可同步。</small>
+        <small>{t.settings.snippetsDirHint}</small>
       </label>
 
       <label>
-        <span>剪贴板历史保留条数</span>
+        <span>{t.settings.historyLimit}</span>
         <input class="field short" type="number" min="10" bind:value={settings.config.historyLimit} />
-        <small>置顶的记录不计入，也不会被自动清理。</small>
+        <small>{t.settings.historyLimitHint}</small>
       </label>
 
       <label>
-        <span>不记录这些程序的复制（每行一个 exe 名）</span>
+        <span>{t.settings.ignoredApps}</span>
         <textarea class="field" rows="3" bind:value={ignoredApps} spellcheck="false"></textarea>
-        <small>密码管理器通常会自动标记敏感内容，这里是额外的保险。</small>
+        <small>{t.settings.ignoredAppsHint}</small>
       </label>
 
       <label>
-        <span>关闭后保留搜索内容（秒）</span>
+        <span>{t.settings.keepQuery}</span>
         <input class="field short" type="number" min="0" bind:value={settings.config.keepQuerySeconds} />
-        <small>在这段时间内重新打开会保留上次的搜索内容，设为 0 表示每次都清空。</small>
+        <small>{t.settings.keepQueryHint}</small>
       </label>
 
       <label class="check">
         <input type="checkbox" bind:checked={settings.config.restoreClipboard} />
-        <span>粘贴后恢复原来的剪贴板内容</span>
+        <span>{t.settings.restoreClipboard}</span>
       </label>
 
       <label class="check">
         <input type="checkbox" bind:checked={settings.autostart} />
-        <span>开机自动启动</span>
+        <span>{t.settings.autostart}</span>
       </label>
     </div>
   {/if}
@@ -202,8 +213,8 @@
   <footer>
     {#if error}<span class="error">{error}</span>{/if}
     <span class="spacer"></span>
-    <button class="btn" onclick={onDone}>取消</button>
-    <button class="btn primary" onclick={save}>保存</button>
+    <button class="btn" onclick={onDone}>{t.common.cancel}</button>
+    <button class="btn primary" onclick={save}>{t.common.save}</button>
   </footer>
 </div>
 
@@ -273,6 +284,10 @@
 
   .short {
     width: 140px;
+  }
+
+  .lang {
+    width: 240px;
   }
 
   textarea.field {

@@ -8,6 +8,7 @@ use std::time::Duration;
 use windows_sys::Win32::Foundation::{
     CloseHandle, GlobalFree, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
+use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
 use windows_sys::Win32::Graphics::Gdi::{
     ClientToScreen, GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
@@ -732,4 +733,10 @@ pub fn show_without_focus(hwnd: WindowHandle) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
     }
+}
+
+/// Whether the Windows display language is Chinese (any region).
+pub fn prefers_chinese() -> bool {
+    // The primary language is the low 10 bits of the LANGID; LANG_CHINESE = 0x04.
+    unsafe { GetUserDefaultUILanguage() & 0x3ff == 0x04 }
 }

@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod db;
 mod highlight;
+mod i18n;
 mod migrate;
 mod placement;
 mod platform;
@@ -339,7 +340,7 @@ fn toggle_launcher(app: &AppHandle) {
 fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
     let shortcut: Shortcut = hotkey
         .parse()
-        .map_err(|e| format!("无法识别快捷键 “{hotkey}”：{e}"))?;
+        .map_err(|e| i18n::invalid_hotkey(hotkey, e))?;
     let shortcuts = app.global_shortcut();
     let state = app.state::<AppState>();
     let mut current = state.main_shortcut.lock().unwrap();
@@ -348,7 +349,7 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
     }
     shortcuts
         .register(shortcut)
-        .map_err(|e| format!("注册快捷键 “{hotkey}” 失败，可能已被其他程序占用：{e}"))?;
+        .map_err(|e| i18n::hotkey_taken(hotkey, e))?;
     *current = Some(shortcut);
     Ok(())
 }
@@ -439,13 +440,30 @@ fn watch_snippets(app: &AppHandle) {
     reload_snippets(app);
 }
 
-fn build_tray(app: &tauri::App) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "打开 Stash", true, None::<&str>)?;
-    let pause = CheckMenuItem::with_id(app, "pause", "暂停记录剪贴板", true, false, None::<&str>)?;
-    let snippets = MenuItem::with_id(app, "snippets", "打开 Snippets 目录", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(
+const TRAY_ID: &str = "main";
+
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let tr = i18n::tr;
+    let paused = app.state::<AppState>().paused.load(Ordering::SeqCst);
+    let show = MenuItem::with_id(app, "show", tr("打开 Stash", "Open Stash"), true, None::<&str>)?;
+    let pause = CheckMenuItem::with_id(
+        app,
+        "pause",
+        tr("暂停记录剪贴板", "Pause clipboard recording"),
+        true,
+        paused,
+        None::<&str>,
+    )?;
+    let snippets = MenuItem::with_id(
+        app,
+        "snippets",
+        tr("打开 Snippets 目录", "Open snippets folder"),
+        true,
+        None::<&str>,
+    )?;
+    let settings = MenuItem::with_id(app, "settings", tr("设置", "Settings"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tr("退出", "Quit"), true, None::<&str>)?;
+    Menu::with_items(
         app,
         &[
             &show,
@@ -456,9 +474,28 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
-    )?;
+    )
+}
 
-    let mut tray = TrayIconBuilder::with_id("main")
+/// Switches to the language `config.language` resolves to: the tray menu is
+/// rebuilt and every window re-renders its text.
+pub(crate) fn apply_language(app: &AppHandle) {
+    let lang = i18n::resolve(&app.state::<AppState>().config.read().unwrap().language);
+    if lang == i18n::current() {
+        return;
+    }
+    i18n::set(lang);
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), tray_menu(app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    for label in [MAIN_WINDOW, CHIP_WINDOW, MANAGE_WINDOW] {
+        let _ = app.emit_to(label, "language", lang);
+    }
+}
+
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+    let menu = tray_menu(app.handle())?;
+    let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Stash")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -539,6 +576,7 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
             let config_path = paths.app_config_dir()?.join("config.json");
             let config = Config::load(&config_path);
+            i18n::set(i18n::resolve(&config.language));
 
             let mut default_snippets_dir = paths.document_dir()?.join("Stash Snippets");
             // Only the default location is renamed; a custom one is the user's.
@@ -633,6 +671,7 @@ pub fn run() {
             commands::close_manage,
             commands::chip_swap,
             commands::chip_undo,
+            commands::language,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

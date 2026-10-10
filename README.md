@@ -12,7 +12,7 @@ A keyboard launcher for Windows that keeps your clipboard history, your Markdown
 ![The Stash popover: clipboard history on the left, a preview of the selected entry on the right](docs/images/popover.png)
 
 > [!NOTE]
-> The interface is currently in Chinese only. The [user guide](docs/guide.md) gives the Chinese labels next to their English meaning.
+> The interface is available in English and Chinese. It follows the Windows display language, and you can switch it under **Settings → Language**.
 
 ## Highlights
 
@@ -23,6 +23,7 @@ A keyboard launcher for Windows that keeps your clipboard history, your Markdown
 - **Snippets are plain `.md` files** with variables (text, defaults, choices, dates, clipboard history, cursor position). You fill them in inside the popover and see the result as you type. Keep the folder in OneDrive or git to sync it.
 - **Calculator in the search box.** Type `(1+2)*3^2`, or `$1 + $2` to add the last two numbers you copied.
 - **Knows what you copied.** Tables, commands, identifiers, URLs and Solana addresses get matching previews and actions, such as "paste as JSON string" or "paste as Markdown table".
+- **English and Chinese interface**, following the Windows display language by default.
 - **Private by design.** Everything stays on your machine. Stash never connects to the network on its own, and it respects the "don't record" flags that password managers set.
 
 ## Install
@@ -40,7 +41,7 @@ You can also [build it from source](#build-from-source).
 2. Copy a few things as usual, then press `Alt+Space` in any app.
 3. Type to search, use `↑ ↓` to pick, and press `↵` to paste into the app you came from (`⇧↵` copies only).
 4. Press `Ctrl N` to turn the selected clip into a snippet, or type `12*3` to see the calculator.
-5. Press `Ctrl ,` (or use the tray menu) to open the settings, where you can change the hotkey and turn on start at login.
+5. Press `Ctrl ,` (or use the tray menu) to open the settings, where you can change the language and the hotkey, and turn on start at login.
 
 The [user guide](docs/guide.md) covers everything else: all shortcuts, the snippet format and variables, the calculator, and URL snippets.
 
@@ -63,7 +64,7 @@ The [user guide](docs/guide.md) covers everything else: all shortcuts, the snipp
 Another program (PowerToys Run, for example) is probably using the same hotkey. Open the settings, click the hotkey field and press a new combination.
 
 **The popover appears in the middle of the screen. Can it follow my text cursor?**
-Yes: turn on "Open next to the text caret" (在输入光标旁边打开) in the settings. It works in most editors, terminals and browsers. Where Stash can't find the caret, it opens next to the mouse pointer and the title bar says "caret not found" (未找到光标).
+Yes: turn on "Open next to the text caret" in the settings. It works in most editors, terminals and browsers. Where Stash can't find the caret, it opens next to the mouse pointer and the title bar says "Caret not found".
 
 **How do I sync snippets between computers?**
 Point the snippets folder at a synced location (OneDrive, Nutstore, a git repository…) in the settings. Usage statistics are kept in the local database, so using a snippet never modifies its file or triggers a sync.

@@ -3,8 +3,9 @@
   import { onMount, tick } from "svelte";
   import { api, type Field, type Segment, type Snippet } from "./api";
   import CloseButton from "./CloseButton.svelte";
+  import { t } from "./i18n.svelte";
   import Rendered from "./Rendered.svelte";
-  import { tokens, VARIABLES, type Variable } from "./template";
+  import { tokens, variables, type Variable } from "./template";
 
   type Props = {
     snippet: Snippet | null;
@@ -98,7 +99,7 @@
   type Menu = { x: number; y: number; selection: boolean; index: number };
   let menu = $state<Menu | null>(null);
   let menuEl: HTMLElement | undefined = $state();
-  const menuItems = $derived(menu ? VARIABLES.filter((v) => !(menu!.selection && v.plainOnly)) : []);
+  const menuItems = $derived(menu ? variables().filter((v) => !(menu!.selection && v.plainOnly)) : []);
 
   async function openMenu() {
     if (!view) return;
@@ -148,10 +149,10 @@
       bind:this={titleInput}
       bind:value={title}
       class="title"
-      placeholder="Snippet 标题"
+      placeholder={t.editor.titlePlaceholder}
       spellcheck="false"
     />
-    <input bind:value={tags} class="field tags" placeholder="标签，用逗号分隔" spellcheck="false" />
+    <input bind:value={tags} class="field tags" placeholder={t.editor.tagsPlaceholder} spellcheck="false" />
     <CloseButton onClose={onDone} />
   </header>
 
@@ -159,16 +160,16 @@
     <div class="code">
       <div class="host" bind:this={host}></div>
       <div class="hint">
-        <span>输入 <code>{"{{"}</code> 插入变量</span>
-        <span>选中文字后 <kbd>Ctrl K</kbd> 把它变成变量</span>
+        <span>{@html t.editor.typeBraces}</span>
+        <span>{@html t.editor.selectAndCtrlK}</span>
         <span class="spacer"></span>
-        {#if problems}<span class="warn">{problems} 处变量写法有误，会按原文粘贴</span>{/if}
+        {#if problems}<span class="warn">{t.editor.problems(problems)}</span>{/if}
       </div>
     </div>
 
     <aside>
       <section>
-        <h3>试填变量 <span class="note">只用于预览，不会保存</span></h3>
+        <h3>{t.editor.tryValues} <span class="note">{t.editor.previewOnly}</span></h3>
         {#each fields as field (field.name)}
           <div class="var-row">
             <span class="vname" title={field.name}>{field.name}</span>
@@ -185,7 +186,7 @@
               <input
                 class="field"
                 bind:value={values[field.name]}
-                placeholder={field.default || "填一个值试试"}
+                placeholder={field.default || t.editor.tryPlaceholder}
                 spellcheck="false"
                 onfocus={() => (focus = field.name)}
                 onblur={() => (focus = null)}
@@ -194,14 +195,13 @@
           </div>
         {:else}
           <p class="empty">
-            没有要填写的变量。输入 <code>{"{{"}</code> 或按 <kbd>Ctrl K</kbd> 插入一个；也可以先选中一段文字，再按
-            <kbd>Ctrl K</kbd> 把它变成变量。
+            {@html t.editor.noFields}
           </p>
         {/each}
       </section>
 
       <section>
-        <h3>粘贴结果</h3>
+        <h3>{t.editor.result}</h3>
         <pre class="result"><Rendered {segments} {focus} /></pre>
       </section>
     </aside>
@@ -211,13 +211,13 @@
     {#if error}
       <span class="error">{error}</span>
     {:else}
-      <span>{snippet ? snippet.path : "新建 Snippet"}</span>
+      <span>{snippet ? snippet.path : t.editor.newSnippet}</span>
     {/if}
     <span class="spacer"></span>
-    <span><kbd>Ctrl S</kbd> 保存</span>
-    <span><kbd>Esc</kbd> 返回</span>
-    <button class="btn" onclick={onDone}>取消</button>
-    <button class="btn primary" onclick={save}>保存</button>
+    <span><kbd>Ctrl S</kbd> {t.common.save}</span>
+    <span><kbd>Esc</kbd> {t.common.back}</span>
+    <button class="btn" onclick={onDone}>{t.common.cancel}</button>
+    <button class="btn primary" onclick={save}>{t.common.save}</button>
   </footer>
 
   {#if menu}
@@ -233,7 +233,7 @@
         if (!menuEl?.contains(e.relatedTarget as Node)) menu = null;
       }}
     >
-      <div class="menu-title">{menu.selection ? "把选中的文字变成…" : "插入变量"}</div>
+      <div class="menu-title">{menu.selection ? t.editor.turnInto : t.editor.insertVariable}</div>
       {#each menuItems as item, i}
         <button
           role="menuitem"
@@ -249,7 +249,7 @@
       {/each}
       <div class="menu-info">
         {menuItems[menu.index]?.info}{#if menuItems[menu.index]?.example}
-          · 现在是 {menuItems[menu.index].example?.()}{/if}
+          · {t.editor.now(menuItems[menu.index].example?.() ?? "")}{/if}
       </div>
     </div>
   {/if}
@@ -404,7 +404,8 @@
     user-select: text;
   }
 
-  code {
+  /* The hints come from the dictionaries through {@html}, so a scoped selector misses them. */
+  .editor :global(code) {
     padding: 1px 4px;
     border-radius: 4px;
     background: var(--kbd-bg);

@@ -2,7 +2,7 @@
 
 English | [简体中文](guide.zh-CN.md)
 
-See the [README](../README.md) for installation and a quick start. The interface is in Chinese; where this guide names a label you will see on screen, the Chinese text follows in parentheses.
+See the [README](../README.md) for installation and a quick start. The interface is available in English and Chinese; this guide uses the English labels.
 
 - [The popover](#the-popover)
   - [After pasting: swap or undo](#after-pasting-swap-or-undo)
@@ -16,16 +16,16 @@ See the [README](../README.md) for installation and a quick start. The interface
 
 ## The popover
 
-The popover opens in the upper middle of the screen under the mouse, with the list and the preview centered as a unit. Turn on "Open next to the text caret" (在输入光标旁边打开) in the settings to open it right where you are typing instead; this works in terminals, editors, browsers and chat apps such as Feishu. If Stash can't find the caret, the popover opens next to the mouse pointer and its title bar says "caret not found" (未找到光标). When there is not enough room below the caret, the whole popover flips above it, with the search box still next to the caret.
+The popover opens in the upper middle of the screen under the mouse, with the list and the preview centered as a unit. Turn on "Open next to the text caret" in the settings to open it right where you are typing instead; this works in terminals, editors, browsers and chat apps such as Feishu. If Stash can't find the caret, the popover opens next to the mouse pointer and its title bar says "Caret not found". When there is not enough room below the caret, the whole popover flips above it, with the search box still next to the caret.
 
-- `Ctrl Tab` cycles the scope through All → Clipboard → Snippets (全部 → 剪贴板 → Snippets); the current scope is shown to the left of the search box. Typing `#` lists the scopes and your snippet tags (`#clip` `#snip` `#pin` `#work`…); pick one with `↵`, or type the full name followed by a space. `Backspace` in an empty search box returns to All. The Clipboard scope is grouped into Pinned / Today / Yesterday / Earlier (置顶 / 今天 / 昨天 / 更早); the Snippets scope lists every snippet, including ones you have never used.
+- `Ctrl Tab` cycles the scope through All → Clipboard → Snippets; the current scope is shown to the left of the search box. Typing `#` lists the scopes and your snippet tags (`#clip` `#snip` `#pin` `#work`…); pick one with `↵`, or type the full name followed by a space. `Backspace` in an empty search box returns to All. The Clipboard scope is grouped into Pinned / Today / Yesterday / Earlier; the Snippets scope lists every snippet, including ones you have never used.
 - Matched characters are highlighted, and pinyin matches light up the Chinese characters they stand for (`zb` → **周报**). When the match is in the body rather than the first line, a clip shows the matching line as its title, and a snippet shows that line under its title when selected. The preview highlights every occurrence and scrolls to the first one.
 - The selected row gets an extra summary line. A full preview opens beside the list automatically, on whichever side has more room (the settings can make it open only when you press `→`); `←` closes it. Tables are laid out by default; `Tab` switches to the raw text.
 - A snippet's preview shows what will be pasted: dates and clipboard contents are filled in, variables show their defaults, variables without a default appear as `‹name›`, and `{{cursor}}` is a thin bar. Variables you fill in are green; values filled in automatically are blue (hover to see where they come from). `Tab` switches to the template source.
 - Press `↵` on a snippet with variables and the fields open inline under the row. Pick choices with `1–9` or `← →`, type text directly, and move to the next field with `Tab`. The side preview shows the text to be pasted as you type, with the field you are editing highlighted.
 - Click into the preview text (or press `F2`) to edit what will be pasted. The caret lands where you clicked, and a drag selection stays selected. For a clip you edit the full text; for a snippet you edit the rendered result (pressing `F2` while filling in variables keeps the values entered so far). `Ctrl ↵` pastes, `Ctrl ⇧ ↵` copies, `Esc` discards. The original clip and snippet file are left unchanged, and the edited text is not added to the clipboard history.
 - Stash recognizes what kind of content a clip is (table, command, identifier, Solana address, URL…), and the preview and the `Ctrl K` actions adapt to it.
-- `Ctrl K` opens the action menu. Submenus open as soon as their item is highlighted; `→` moves into them. "Paste as…" (粘贴为…) converts the text to a single line, a quoted string, a JSON string or a Markdown table. Solana addresses can also be shortened to `3wCv…ijkL` or wrapped as `pubkey!("…")`, and `Ctrl ↵` opens them on Solscan.
+- `Ctrl K` opens the action menu. Submenus open as soon as their item is highlighted; `→` moves into them. "Paste as…" converts the text to a single line, a quoted string, a JSON string or a Markdown table. Solana addresses can also be shortened to `3wCv…ijkL` or wrapped as `pubkey!("…")`, and `Ctrl ↵` opens them on Solscan.
 - `Alt 1–9` pastes the N-th row directly.
 - The input method switches to English mode when the popover opens (search understands pinyin, and `Shift` switches back to Chinese). You can turn this off in the settings.
 
@@ -38,7 +38,7 @@ To find the caret, Stash tries the Win32 caret, then MSAA (Chromium / Electron),
 After a paste, a small strip appears next to the pasted text (next to the mouse if the caret can't be found) for a few seconds. It doesn't take focus, so you can keep typing.
 
 - Hold `Alt` and tap `V` repeatedly: the strip steps back through earlier clips, and releasing `Alt` replaces what you just pasted with the chosen one, like Emacs yank-pop.
-- Click "Undo" (撤销) on the strip to delete what was just pasted.
+- Click "Undo" on the strip to delete what was just pasted.
 
 The replacement works by selecting the pasted text with Shift+← and pasting over it; in terminals Stash uses Backspace instead. In terminals only single-line clips are offered, and text over 2000 characters is never replaced. The hotkey can be changed or turned off in the settings. It is registered only while the strip is visible, so `Alt+V` stays free the rest of the time.
 
@@ -115,7 +115,7 @@ Press `Ctrl N` in the popover to create a snippet and `Ctrl E` to edit one. You 
 ![The snippet editor completing a variable after typing {{](images/snippet-editor.png)
 
 - Typing `{{` lists every variable along with its current value (today's date, for example). Pick one to insert it, and use `Tab` to jump between the name and the choices.
-- Or write real text first, select the part that should vary (a person's name, say) and press `Ctrl K`. "Fill-in" (填空) turns it into `{{name=Alice}}`, with the selection as the default; just give it a name. You can also turn it into choices, a date, a clipboard reference and so on. With nothing selected, `Ctrl K` inserts at the caret.
+- Or write real text first, select the part that should vary (a person's name, say) and press `Ctrl K`. "Fill-in" turns it into `{{name=Alice}}`, with the selection as the default; just give it a name. You can also turn it into choices, a date, a clipboard reference and so on. With nothing selected, `Ctrl K` inserts at the caret.
 - Variables are colored by type. Malformed ones (a variable name containing a space, for example) are marked in red, with the reason on hover; they are pasted as literal text.
 - The side panel lists the variables you will be asked for. You can try out values and see the pasted result update below.
 
@@ -138,6 +138,7 @@ Usage counts and other statistics are kept in the local database, not in the sni
 
 Open the settings with `Ctrl ,` or from the tray menu. You can change:
 
+- The interface language: Same as Windows (the default; Chinese for a Chinese Windows display language, English otherwise), 中文 or English
 - The launcher hotkey (default `Alt+Space`) and the swap-after-paste hotkey (default `Alt+V`; can be turned off)
 - Whether the popover opens next to the text caret, opens the preview automatically, and switches the input method to English
 - The snippets folder (default `Documents\Stash Snippets`)
