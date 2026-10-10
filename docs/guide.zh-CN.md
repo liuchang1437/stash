@@ -141,6 +141,7 @@ https://www.baidu.com/s?wd={{关键词}}
 - 界面语言：跟随系统（默认；Windows 显示语言是中文时用中文，否则用英文）、中文或 English
 - 唤起快捷键（默认 `Alt+Space`）和粘贴后「换一条」的快捷键（默认 `Alt+V`，可关闭）
 - 在输入光标旁边打开、打开时自动展开预览、打开时切换到英文输入
+- 浮层里列表和预览的宽度（默认 440 和 480 px）
 - Snippets 目录（默认 `文档\Stash Snippets`）
 - 剪贴板历史保留条数（默认 5000，置顶的记录不计入，也不会被自动清理）
 - 不记录哪些程序的复制（默认忽略 1Password、KeePass、KeePassXC、Bitwarden）

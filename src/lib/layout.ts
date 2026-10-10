@@ -14,8 +14,6 @@ import type { Space } from "./api";
 
 export const MARGIN = 20;
 export const GAP = 8;
-export const CARD_W = 440;
-export const PEEK_W = 480;
 export const MENU_W = 220;
 /** Main menu + gap + submenu, reserved so a submenu always has room. */
 export const MENU_FULL_W = MENU_W * 2 + 6;
@@ -43,18 +41,21 @@ export type PanelInput = {
   menuHeight: number | null;
   /** How far an open submenu sticks out past the main menu. */
   subOverflow: number;
+  /** List card and preview widths (`config.cardWidth` / `peekWidth`). */
+  cardWidth: number;
+  peekWidth: number;
 };
 
 type Box = { x: number; y: number; w: number; h: number };
 
 /** Side panels go where there is room, keeping the card on the caret. */
-export function sideFor(width: number, space: Space): Side {
-  if (space.right >= CARD_W + GAP + width + MARGIN) return "right";
-  return space.left > space.right - CARD_W ? "left" : "right";
+export function sideFor(width: number, space: Space, cardWidth: number): Side {
+  if (space.right >= cardWidth + GAP + width + MARGIN) return "right";
+  return space.left > space.right - cardWidth ? "left" : "right";
 }
 
 export function placePanels(input: PanelInput): Geometry {
-  const { space, flip, subOverflow } = input;
+  const { space, flip, subOverflow, cardWidth, peekWidth } = input;
   const H = input.cardHeight;
   const room = {
     right: space.right - MARGIN,
@@ -62,7 +63,7 @@ export function placePanels(input: PanelInput): Geometry {
     vertical: (flip ? space.above : space.below) - MARGIN - 4,
   };
   const alignY = (h: number) => (flip ? H - h : 0);
-  const besideX = (side: Side, w: number) => (side === "right" ? CARD_W + GAP : -GAP - w);
+  const besideX = (side: Side, w: number) => (side === "right" ? cardWidth + GAP : -GAP - w);
   const fitsVertically = (y: number, h: number) =>
     flip ? y >= H - room.vertical && y + h <= H : y >= 0 && y + h <= room.vertical;
   // The main menu sits at x; its submenu opens away from the card.
@@ -72,13 +73,13 @@ export function placePanels(input: PanelInput): Geometry {
     return e.x >= -room.left && e.x + e.w <= room.right;
   };
 
-  const boxes: Box[] = [{ x: 0, y: 0, w: CARD_W, h: H }];
+  const boxes: Box[] = [{ x: 0, y: 0, w: cardWidth, h: H }];
 
   let peek: Geometry["peek"] = null;
-  const peekSide = sideFor(PEEK_W, space);
+  const peekSide = sideFor(peekWidth, space, cardWidth);
   if (input.peekHeight !== null) {
-    peek = { x: besideX(peekSide, PEEK_W), y: alignY(input.peekHeight) };
-    boxes.push({ ...peek, w: PEEK_W, h: input.peekHeight });
+    peek = { x: besideX(peekSide, peekWidth), y: alignY(input.peekHeight) };
+    boxes.push({ ...peek, w: peekWidth, h: input.peekHeight });
   }
 
   let menu: MenuSlot | null = null;
@@ -89,16 +90,16 @@ export function placePanels(input: PanelInput): Geometry {
       const right = peekSide === "right";
       // 1. The preview's column, in the free space past the preview.
       candidates.push({
-        x: right ? peek.x : peek.x + PEEK_W - MENU_W,
+        x: right ? peek.x : peek.x + peekWidth - MENU_W,
         y: flip ? peek.y - GAP - h : peek.y + input.peekHeight + GAP,
         leftward: !right,
       });
       // 2. Beyond the preview.
-      candidates.push({ x: right ? peek.x + PEEK_W + GAP : peek.x - GAP - MENU_W, y: alignY(h), leftward: !right });
+      candidates.push({ x: right ? peek.x + peekWidth + GAP : peek.x - GAP - MENU_W, y: alignY(h), leftward: !right });
       // 3. The card's other side.
       candidates.push({ x: besideX(right ? "left" : "right", MENU_W), y: alignY(h), leftward: right });
     } else {
-      const side = sideFor(MENU_FULL_W, space);
+      const side = sideFor(MENU_FULL_W, space, cardWidth);
       candidates.push({ x: besideX(side, MENU_W), y: alignY(h), leftward: side === "left" });
     }
     // 4. No room anywhere: on top of the preview, at its inner edge.

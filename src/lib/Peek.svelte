@@ -261,7 +261,8 @@
 
 <style>
   .peek {
-    width: 480px;
+    /* The wrapper in Popover.svelte sets the width (`config.peekWidth`). */
+    width: 100%;
     max-height: 460px;
     display: flex;
     flex-direction: column;

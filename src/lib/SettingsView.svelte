@@ -81,6 +81,8 @@
       .map((s) => s.trim())
       .filter(Boolean);
     settings.config.historyLimit = Number(settings.config.historyLimit) || 5000;
+    settings.config.cardWidth = Math.round(Number(settings.config.cardWidth)) || 440;
+    settings.config.peekWidth = Math.round(Number(settings.config.peekWidth)) || 480;
     settings.config.keepQuerySeconds = Math.max(0, Math.floor(Number(settings.config.keepQuerySeconds) || 0));
     try {
       await api.saveSettings($state.snapshot(settings));
@@ -146,6 +148,22 @@
         <input type="checkbox" bind:checked={settings.config.autoPeek} />
         <span>{t.settings.autoPeek}</span>
       </label>
+
+      <!-- Bounds mirror CARD_WIDTHS / PEEK_WIDTHS in config.rs, which clamps on save. -->
+      <div class="group">
+        <span>{t.settings.popoverWidth}</span>
+        <div class="row">
+          <label class="inline">
+            {t.settings.cardWidth}
+            <input class="field short" type="number" min="400" max="800" step="10" bind:value={settings.config.cardWidth} />
+          </label>
+          <label class="inline">
+            {t.settings.peekWidth}
+            <input class="field short" type="number" min="320" max="1000" step="10" bind:value={settings.config.peekWidth} />
+          </label>
+        </div>
+        <small>{t.settings.widthHint}</small>
+      </div>
 
       <label class="check">
         <input type="checkbox" bind:checked={settings.config.englishInput} />
@@ -253,8 +271,25 @@
     gap: 4px;
   }
 
-  label > span {
+  label > span,
+  .group > span {
     font-weight: 500;
+  }
+
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .group .row {
+    gap: 24px;
+  }
+
+  label.inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
   }
 
   small {

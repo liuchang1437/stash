@@ -66,6 +66,9 @@ export type Config = {
   swapHotkey: string;
   /** `zh`, `en`, or empty to follow the Windows display language. */
   language: "" | Lang;
+  /** Popover list and preview widths, CSS px. */
+  cardWidth: number;
+  peekWidth: number;
 };
 
 export type Settings = {
@@ -88,6 +91,9 @@ export type Shown = {
   targetApp: string | null;
   /** Open the preview panel right away instead of on →. */
   autoPeek: boolean;
+  /** List and preview widths from the settings, CSS px. */
+  cardWidth: number;
+  peekWidth: number;
 };
 
 /** Popover window geometry, CSS pixels (see `placement.rs`). */
