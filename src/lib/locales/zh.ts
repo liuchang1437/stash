@@ -1,0 +1,228 @@
+// Chinese UI text. This file defines the shape every language follows:
+// `en.ts` is typed `Messages`, so a missing or extra key fails `npm run check`.
+
+import type { Kind } from "../kinds";
+
+const zh = {
+  /** Display names of apps whose usual name differs from the English one (see `APP_NAMES` in `kinds.ts`). */
+  apps: {
+    openconsole: ["终端", "term"],
+    feishu: ["飞书", "飞书"],
+    explorer: ["资源管理器", "explorer"],
+    weixin: ["微信", "微信"],
+    wechat: ["微信", "微信"],
+    notepad: ["记事本", "notepad"],
+    dingtalk: ["钉钉", "钉钉"],
+  } as Record<string, [string, string]>,
+  previousWindow: "前一个窗口",
+
+  time: {
+    justNow: "刚刚",
+    minutes: (n: number) => `${n} 分钟前`,
+    hours: (n: number) => `${n} 小时前`,
+    days: (n: number) => `${n} 天前`,
+  },
+
+  count: {
+    chars: (n: number) => `${n.toLocaleString()} 字`,
+    lines: (n: number) => `${n} 行`,
+  },
+
+  kinds: {
+    table: "文本 · 含表格",
+    text: "文本",
+    lines: "多行文本",
+    id: "标识符",
+    addr: "Solana 地址",
+    sig: "交易签名",
+    url: "网址",
+    cmd: "命令",
+    num: "数字",
+    path: "路径",
+    snippet: "Snippet",
+    calc: "计算",
+  } satisfies Record<Kind, string>,
+
+  /** "Paste as…" transformations, by id (`transformsFor`). */
+  transforms: {
+    abbr: "缩写",
+    pubkey: "Rust 常量",
+    markdown: "Markdown 表格",
+    quote: "加引号",
+    oneline: "单行",
+    json: "JSON 字符串",
+    trim: "去掉首尾空白",
+  },
+
+  popover: {
+    scopes: { clip: "剪贴板", snip: "Snippets", pin: "置顶" },
+    tagNote: (n: number) => `标签 · ${n} 个 snippet`,
+    groups: { pinned: "置顶", today: "今天", yesterday: "昨天", earlier: "更早" },
+    placeholder: "搜索，# 筛选，或输入算式 2*$1",
+    // A space between Chinese and Latin text.
+    searchIn: (scope: string) => (/^[\x00-\x7f]/.test(scope) ? `在 ${scope} 中搜索` : `在${scope}中搜索`),
+    filtering: "筛选",
+    switchScope: "^Tab 切换类别",
+    results: (n: string) => `${n} 条`,
+    noMatch: "没有匹配的结果",
+    noSnippets: "没有 snippet，^N 新建一个",
+    noPinned: "没有置顶的记录，^P 置顶选中的一条",
+    noClips: "还没有记录，复制点什么试试",
+    calcExpression: "算式 = 结果",
+    notUrl: "这条不是网址",
+    pinned: "已置顶",
+    unpinned: "已取消置顶",
+    deleted: "已删除",
+    usedTimes: (n: number) => `用过 ${n} 次`,
+    seeLayout: "→ 看排版",
+    open: "打开",
+    backToAll: "Backspace 回到全部",
+    caretNotFound: "未找到光标",
+    nextFormat: "Tab 换格式",
+    blank: "（空白）",
+    confirmDelete: "再按 ^D 删除这个 snippet 文件 · Esc 取消",
+  },
+
+  /** Ctrl+K menu items and status bar hints (the keys are added around them). */
+  action: {
+    paste: "粘贴",
+    copy: "复制",
+    pasteAs: "粘贴为…",
+    fillAndPaste: "填写并粘贴",
+    openSolscan: "在 Solscan 打开",
+    openBrowser: "在浏览器打开",
+    editThenPaste: "修改后粘贴",
+    preview: "预览全文",
+    edit: "编辑",
+    newSnippet: "新建 Snippet",
+    pin: "置顶",
+    unpin: "取消置顶",
+    saveAsSnippet: "存为 Snippet",
+    delete: "删除",
+    cancelEdit: "取消修改",
+    next: "下一项",
+    back: "返回",
+    run: "执行",
+    select: "选择",
+    submenu: "子菜单",
+    close: "关闭",
+    filter: "筛选",
+    cancel: "取消",
+    actions: "操作",
+    collapse: "收起",
+    peek: "预览",
+    settings: "设置",
+  },
+
+  peek: {
+    edited: "修改后粘贴",
+    willPaste: "将粘贴",
+    originalKept: "原文不变",
+    view: "显示方式",
+    layout: "排版",
+    result: "结果",
+    raw: "原文",
+    template: "模板",
+    edit: "修改",
+    editTitle: "临时修改后再粘贴，原文不变；也可以直接点正文",
+    editLabel: "修改后粘贴的文字",
+    truncated: (n: number) => `… 只显示前 ${n.toLocaleString()} 字`,
+  },
+
+  chip: {
+    releaseToSwap: (i: number, n: number) => `松开 Alt 换成 ${i}/${n}`,
+    swapped: (i: number, n: number) => `已换成 ${i}/${n}`,
+    pasted: "已粘贴",
+    swap: "换一条",
+    undo: "撤销",
+  },
+
+  common: {
+    close: "关闭",
+    closeEsc: "关闭 (Esc)",
+    cancel: "取消",
+    save: "保存",
+    open: "打开",
+    back: "返回",
+  },
+
+  settings: {
+    title: "设置",
+    language: "界面语言",
+    followSystem: "跟随系统",
+    hotkey: "唤起快捷键",
+    pressKeys: "请按下新的快捷键…",
+    hotkeyHint: "点击后直接按下组合键。默认 Alt+Space。",
+    needsModifier: "快捷键至少需要一个修饰键（Ctrl / Alt / Shift / Win）",
+    followCaret: "在输入光标旁边打开（默认在屏幕中上方；找不到光标时跟随鼠标）",
+    autoPeek: "打开时自动展开预览（关闭后按 → 展开）",
+    englishInput: "打开时切换到英文输入（搜索支持拼音，按 Shift 可切回中文）",
+    swapHotkey: "粘贴后「换一条」快捷键",
+    off: "（已关闭）",
+    swapHint: "粘贴后的几秒内按住 Alt 连按 V 选择更早的记录，松开 Alt 原地替换。只在提示条出现时生效；按 Backspace 关闭。",
+    snippetsDir: "Snippets 目录",
+    snippetsDirHint: "每个 snippet 是一个 .md 文件。把这个目录放进 OneDrive / 坚果云 / git 即可同步。",
+    historyLimit: "剪贴板历史保留条数",
+    historyLimitHint: "置顶的记录不计入，也不会被自动清理。",
+    ignoredApps: "不记录这些程序的复制（每行一个 exe 名）",
+    ignoredAppsHint: "密码管理器通常会自动标记敏感内容，这里是额外的保险。",
+    keepQuery: "关闭后保留搜索内容（秒）",
+    keepQueryHint: "在这段时间内重新打开会保留上次的搜索内容，设为 0 表示每次都清空。",
+    restoreClipboard: "粘贴后恢复原来的剪贴板内容",
+    autostart: "开机自动启动",
+  },
+
+  editor: {
+    titlePlaceholder: "Snippet 标题",
+    tagsPlaceholder: "标签，用逗号分隔",
+    bodyPlaceholder: "内容。输入 {{ 插入变量",
+    // These contain markup and are rendered with {@html}.
+    typeBraces: "输入 <code>{{</code> 插入变量",
+    selectAndCtrlK: "选中文字后 <kbd>Ctrl K</kbd> 把它变成变量",
+    noFields:
+      "没有要填写的变量。输入 <code>{{</code> 或按 <kbd>Ctrl K</kbd> 插入一个；也可以先选中一段文字，再按 <kbd>Ctrl K</kbd> 把它变成变量。",
+    problems: (n: number) => `${n} 处变量写法有误，会按原文粘贴`,
+    tryValues: "试填变量",
+    previewOnly: "只用于预览，不会保存",
+    tryPlaceholder: "填一个值试试",
+    result: "粘贴结果",
+    newSnippet: "新建 Snippet",
+    turnInto: "把选中的文字变成…",
+    insertVariable: "插入变量",
+    now: (example: string) => `现在是 ${example}`,
+  },
+
+  template: {
+    missingClose: "缺少 }}，会按原文粘贴",
+    missingName: "缺少变量名，会按原文粘贴",
+    spaceInName: "变量名不能有空格，会按原文粘贴",
+    badClipboardIndex: "clipboard: 后面要写正整数，1 是最近一条",
+    fill: (name: string) => `填写：${name}`,
+    cursor: "粘贴后光标停在这里",
+    date: "当前时间，粘贴时取值",
+    clipboard: "当前剪贴板，粘贴时取值",
+    uuid: "随机 UUID，粘贴时生成",
+    history: (n: string) => `剪贴板历史第 ${n} 条（1 = 最近）`,
+    emptyClipboard: "‹剪贴板为空›",
+    empty: "‹空›",
+    /** Placeholder words in the syntax the editor shows and inserts. */
+    words: { name: "名称", default: "默认值", option: "选项", format: "格式" },
+    /** The example custom date format. */
+    dateExample: "yyyy年MM月dd日",
+    variables: {
+      fill: { label: "填空", info: "粘贴前在浮层里填写。选中文字再插入，选中的文字就是默认值" },
+      withDefault: { label: "带默认值", info: "粘贴前填写，不改就用默认值" },
+      choice: { label: "选项", info: "粘贴前从几个选项里选一个，第一个是默认" },
+      date: { label: "日期", info: "粘贴时的日期" },
+      time: { label: "时间", info: "粘贴时的时间" },
+      dateFormat: { label: "自定义日期格式", info: "格式里可以用 yyyy yy MM dd HH hh mm ss" },
+      clipboard: { label: "剪贴板", info: "粘贴时剪贴板里的文字" },
+      history: { label: "剪贴板历史", info: "剪贴板历史倒数第 N 条，1 是最近一条" },
+      cursor: { label: "光标位置", info: "粘贴后光标停在这里" },
+      uuid: { label: "UUID", info: "随机 UUID，每次粘贴都不一样" },
+    },
+  },
+};
+
+export type Messages = typeof zh;
+export default zh;

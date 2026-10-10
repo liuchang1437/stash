@@ -32,6 +32,9 @@ pub struct Config {
     /// Hotkey that swaps the text just pasted for an earlier clip while the
     /// post-paste chip is visible. Empty disables swapping.
     pub swap_hotkey: String,
+    /// UI language: `zh`, `en`, or empty to follow the Windows display
+    /// language (`i18n::resolve`).
+    pub language: String,
 }
 
 impl Default for Config {
@@ -50,6 +53,7 @@ impl Default for Config {
             auto_peek: true,
             english_input: true,
             swap_hotkey: "Alt+V".into(),
+            language: String::new(),
         }
     }
 }

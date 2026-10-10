@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t, type Lang } from "./i18n.svelte";
 
 /** Half-open range of matched text, in UTF-16 units (JS string indices). */
 export type Range = [number, number];
@@ -63,6 +64,8 @@ export type Config = {
   autoPeek: boolean;
   englishInput: boolean;
   swapHotkey: string;
+  /** `zh`, `en`, or empty to follow the Windows display language. */
+  language: "" | Lang;
 };
 
 export type Settings = {
@@ -149,6 +152,7 @@ export const api = {
   closeManage: () => invoke<void>("close_manage"),
   chipSwap: () => invoke<void>("chip_swap"),
   chipUndo: () => invoke<void>("chip_undo"),
+  language: () => invoke<Lang>("language"),
 };
 
 /** "1234567.5" -> "1,234,567.5"; scientific notation is left as is. */
@@ -162,10 +166,10 @@ export function groupDigits(value: string): string {
 export function relativeTime(unixSeconds: number): string {
   if (!unixSeconds) return "";
   const diff = Date.now() / 1000 - unixSeconds;
-  if (diff < 60) return "刚刚";
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} 天前`;
+  if (diff < 60) return t.time.justNow;
+  if (diff < 3600) return t.time.minutes(Math.floor(diff / 60));
+  if (diff < 86400) return t.time.hours(Math.floor(diff / 3600));
+  if (diff < 86400 * 7) return t.time.days(Math.floor(diff / 86400));
   const d = new Date(unixSeconds * 1000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

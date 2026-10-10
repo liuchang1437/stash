@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::i18n::{self, Lang};
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Snippet {
     /// Path relative to the snippets directory, `/`-separated. Acts as the id.
@@ -193,8 +195,17 @@ pub fn ensure_dir(dir: &Path) -> io::Result<()> {
         return Ok(());
     }
     fs::create_dir_all(dir)?;
-    let example = "---\ntitle: 示例：邮件回复\ntags: [example]\n---\n{{name=您好}}，\n\n感谢来信，我会在 {{date:MM月dd日}} 前回复：{{cursor}}\n\n祝好\n";
-    fs::write(dir.join("示例.md"), example)
+    let (file, example) = match i18n::current() {
+        Lang::Zh => (
+            "示例.md",
+            "---\ntitle: 示例：邮件回复\ntags: [example]\n---\n{{name=您好}}，\n\n感谢来信，我会在 {{date:MM月dd日}} 前回复：{{cursor}}\n\n祝好\n",
+        ),
+        Lang::En => (
+            "Example.md",
+            "---\ntitle: Example: email reply\ntags: [example]\n---\nHi {{name=there}},\n\nThanks for your message. I'll get back to you by {{date:MM/dd}}: {{cursor}}\n\nBest regards\n",
+        ),
+    };
+    fs::write(dir.join(file), example)
 }
 
 #[cfg(test)]

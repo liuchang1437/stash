@@ -23,7 +23,8 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import { escapeSnippet, tokens, VARIABLES, type TokenKind, type Variable } from "./template";
+import { t } from "./i18n.svelte";
+import { escapeSnippet, tokens, variables, type TokenKind, type Variable } from "./template";
 
 export type EditorOptions = {
   doc: string;
@@ -41,7 +42,7 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
         history(),
         drawSelection(),
         EditorView.lineWrapping,
-        placeholder("内容。输入 {{ 插入变量"),
+        placeholder(t.editor.bodyPlaceholder),
         highlightVariables,
         linter(lintVariables, { delay: 300 }),
         autocompletion({ override: [completeVariables], icons: false }),
@@ -65,7 +66,7 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
   });
 }
 
-/** Inserts `variable` at the selection; selected text becomes its default (填空, 选项). */
+/** Inserts `variable` at the selection; selected text becomes its default (fill-in, choice). */
 export function insertVariable(view: EditorView, variable: Variable) {
   const { from, to } = view.state.selection.main;
   const selected = escapeSnippet(view.state.sliceDoc(from, to));
@@ -123,7 +124,7 @@ function completeVariables(ctx: CompletionContext): CompletionResult | null {
 }
 
 function completions(): Completion[] {
-  return VARIABLES.map((v, i) => ({
+  return variables().map((v, i) => ({
     label: v.syntax,
     detail: v.example ? `${v.label} · ${v.example()}` : v.label,
     info: v.info,

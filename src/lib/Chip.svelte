@@ -2,6 +2,7 @@
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
   import { api, type ChipState } from "./api";
+  import { t } from "./i18n.svelte";
 
   // The chip window never takes focus, so the app that was pasted into
   // keeps receiving keys. Buttons still react to clicks.
@@ -21,19 +22,19 @@
   <div class="chip" class:choosing={chip.phase === "choosing"}>
     {#if chip.phase === "choosing"}
       <span class="icon">↻</span>
-      <span class="lead">松开 Alt 换成 {chip.index + 1}/{chip.total}</span>
+      <span class="lead">{t.chip.releaseToSwap(chip.index + 1, chip.total)}</span>
     {:else}
       <svg class="icon" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"
         ><path d="m5 12 5 5 9-10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg
       >
-      <span class="lead">{chip.phase === "replaced" ? `已换成 ${chip.index + 1}/${chip.total}` : "已粘贴"}</span>
+      <span class="lead">{chip.phase === "replaced" ? t.chip.swapped(chip.index + 1, chip.total) : t.chip.pasted}</span>
     {/if}
     <span class="preview">{chip.preview}</span>
     {#if chip.canSwap && chip.phase !== "choosing"}
-      <button onclick={() => api.chipSwap()}>{#if hotkey}<kbd>{hotkey}</kbd>{/if} 换一条</button>
+      <button onclick={() => api.chipSwap()}>{#if hotkey}<kbd>{hotkey}</kbd>{/if} {t.chip.swap}</button>
     {/if}
     {#if chip.phase !== "choosing"}
-      <button onclick={() => api.chipUndo()}>撤销</button>
+      <button onclick={() => api.chipUndo()}>{t.chip.undo}</button>
     {/if}
   </div>
 {/if}

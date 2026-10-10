@@ -5,6 +5,7 @@
 // two in step.
 
 import type { Segment } from "./api";
+import { t } from "./i18n.svelte";
 
 export type TokenKind = "input" | "auto" | "cursor" | "invalid";
 
@@ -22,7 +23,7 @@ export function tokens(src: string): Token[] {
     if (from < 0) break;
     const end = src.indexOf("}}", from + 2);
     if (end < 0) {
-      out.push({ from, to: from + 2, kind: "invalid", name: "", problem: "缺少 }}，会按原文粘贴" });
+      out.push({ from, to: from + 2, kind: "invalid", name: "", problem: t.template.missingClose });
       break;
     }
     out.push({ from, to: end + 2, ...classify(src.slice(from + 2, end)) });
@@ -37,11 +38,11 @@ function classify(raw: string): Omit<Token, "from" | "to"> {
   const name = (at < 0 ? inner : inner.slice(0, at)).trim();
   const sep = at < 0 ? "" : inner[at];
   const arg = at < 0 ? "" : inner.slice(at + 1).trim();
-  if (!name) return { kind: "invalid", name, problem: "缺少变量名，会按原文粘贴" };
-  if (/\s/.test(name)) return { kind: "invalid", name, problem: "变量名不能有空格，会按原文粘贴" };
+  if (!name) return { kind: "invalid", name, problem: t.template.missingName };
+  if (/\s/.test(name)) return { kind: "invalid", name, problem: t.template.spaceInName };
   // Rust's usize parsing also takes a leading `+`.
   if (name === "clipboard" && sep === ":" && !(/^\+?\d+$/.test(arg) && Number(arg) > 0)) {
-    return { kind: "invalid", name, problem: "clipboard: 后面要写正整数，1 是最近一条" };
+    return { kind: "invalid", name, problem: t.template.badClipboardIndex };
   }
   if (name === "cursor") return { kind: "cursor", name };
   if (AUTO.has(name)) return { kind: "auto", name };
@@ -63,21 +64,21 @@ export function templatePieces(src: string): { text: string; token: Token | null
 
 /** Tooltip for a rendered variable. */
 export function segmentTitle(seg: Segment): string {
-  if (seg.kind === "input") return `填写：${seg.name}`;
-  if (seg.kind === "cursor") return "粘贴后光标停在这里";
-  if (seg.name === "date") return "当前时间，粘贴时取值";
-  if (seg.name === "clipboard") return "当前剪贴板，粘贴时取值";
-  if (seg.name === "uuid") return "随机 UUID，粘贴时生成";
+  if (seg.kind === "input") return t.template.fill(seg.name ?? "");
+  if (seg.kind === "cursor") return t.template.cursor;
+  if (seg.name === "date") return t.template.date;
+  if (seg.name === "clipboard") return t.template.clipboard;
+  if (seg.name === "uuid") return t.template.uuid;
   const n = seg.name?.match(/^clipboard:(\d+)$/)?.[1];
-  return n ? `剪贴板历史第 ${n} 条（1 = 最近）` : "";
+  return n ? t.template.history(n) : "";
 }
 
 /** What an empty variable shows in a preview. */
 export function segmentPlaceholder(seg: Segment): string {
   if (seg.kind === "input") return `‹${seg.name}›`;
   if (seg.name === "uuid") return "‹UUID›";
-  if (seg.name?.startsWith("clipboard")) return "‹剪贴板为空›";
-  return "‹空›";
+  if (seg.name?.startsWith("clipboard")) return t.template.emptyClipboard;
+  return t.template.empty;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +87,7 @@ export function segmentPlaceholder(seg: Segment): string {
 /**
  * `template` is a CodeMirror snippet: `${name}` marks a field Tab moves
  * through. `selected` is the text selected when inserting (already escaped
- * for the snippet syntax); 填空 and 选项 turn it into the default.
+ * for the snippet syntax); fill-in and choice turn it into the default.
  */
 export type Variable = {
   label: string;
@@ -99,72 +100,73 @@ export type Variable = {
   template: (selected: string) => string;
 };
 
-export const VARIABLES: Variable[] = [
-  {
-    label: "填空",
-    syntax: "{{名称}}",
-    info: "粘贴前在浮层里填写。选中文字再插入，选中的文字就是默认值",
-    template: (s) => (s ? `{{\${名称}=${s}}}` : "{{${名称}}}"),
-  },
-  {
-    label: "带默认值",
-    syntax: "{{名称=默认值}}",
-    info: "粘贴前填写，不改就用默认值",
-    plainOnly: true,
-    template: () => "{{${名称}=${默认值}}}",
-  },
-  {
-    label: "选项",
-    syntax: "{{名称:A|B}}",
-    info: "粘贴前从几个选项里选一个，第一个是默认",
-    template: (s) => (s ? `{{\${名称}:${s}|\${选项2}}}` : "{{${名称}:${选项1}|${选项2}}}"),
-  },
-  {
-    label: "日期",
-    syntax: "{{date}}",
-    info: "粘贴时的日期",
-    example: () => formatDate("yyyy-MM-dd"),
-    template: () => "{{date}}",
-  },
-  {
-    label: "时间",
-    syntax: "{{time}}",
-    info: "粘贴时的时间",
-    example: () => formatDate("HH:mm"),
-    template: () => "{{time}}",
-  },
-  {
-    label: "自定义日期格式",
-    syntax: "{{date:格式}}",
-    info: "格式里可以用 yyyy yy MM dd HH hh mm ss",
-    example: () => formatDate("yyyy年MM月dd日"),
-    template: () => "{{date:${yyyy年MM月dd日}}}",
-  },
-  {
-    label: "剪贴板",
-    syntax: "{{clipboard}}",
-    info: "粘贴时剪贴板里的文字",
-    template: () => "{{clipboard}}",
-  },
-  {
-    label: "剪贴板历史",
-    syntax: "{{clipboard:N}}",
-    info: "剪贴板历史倒数第 N 条，1 是最近一条",
-    template: () => "{{clipboard:${2}}}",
-  },
-  {
-    label: "光标位置",
-    syntax: "{{cursor}}",
-    info: "粘贴后光标停在这里",
-    template: () => "{{cursor}}",
-  },
-  {
-    label: "UUID",
-    syntax: "{{uuid}}",
-    info: "随机 UUID，每次粘贴都不一样",
-    template: () => "{{uuid}}",
-  },
-];
+/** A CodeMirror snippet field with `text` as its placeholder. */
+const field = (text: string) => "${" + text + "}";
+
+/** The variables the editor offers, in the UI language. */
+export function variables(): Variable[] {
+  const { words, variables: v, dateExample } = t.template;
+  const name = field(words.name);
+  return [
+    {
+      ...v.fill,
+      syntax: `{{${words.name}}}`,
+      template: (s) => (s ? `{{${name}=${s}}}` : `{{${name}}}`),
+    },
+    {
+      ...v.withDefault,
+      syntax: `{{${words.name}=${words.default}}}`,
+      plainOnly: true,
+      template: () => `{{${name}=${field(words.default)}}}`,
+    },
+    {
+      ...v.choice,
+      syntax: `{{${words.name}:A|B}}`,
+      template: (s) =>
+        s
+          ? `{{${name}:${s}|${field(words.option + "2")}}}`
+          : `{{${name}:${field(words.option + "1")}|${field(words.option + "2")}}}`,
+    },
+    {
+      ...v.date,
+      syntax: "{{date}}",
+      example: () => formatDate("yyyy-MM-dd"),
+      template: () => "{{date}}",
+    },
+    {
+      ...v.time,
+      syntax: "{{time}}",
+      example: () => formatDate("HH:mm"),
+      template: () => "{{time}}",
+    },
+    {
+      ...v.dateFormat,
+      syntax: `{{date:${words.format}}}`,
+      example: () => formatDate(dateExample),
+      template: () => `{{date:${field(dateExample)}}}`,
+    },
+    {
+      ...v.clipboard,
+      syntax: "{{clipboard}}",
+      template: () => "{{clipboard}}",
+    },
+    {
+      ...v.history,
+      syntax: "{{clipboard:N}}",
+      template: () => `{{clipboard:${field("2")}}}`,
+    },
+    {
+      ...v.cursor,
+      syntax: "{{cursor}}",
+      template: () => "{{cursor}}",
+    },
+    {
+      ...v.uuid,
+      syntax: "{{uuid}}",
+      template: () => "{{uuid}}",
+    },
+  ];
+}
 
 /** Escapes text so a CodeMirror snippet inserts it literally. */
 export function escapeSnippet(text: string): string {

@@ -2,6 +2,7 @@
 // what it can be turned into. Pure functions; no Tauri calls.
 
 import { looksLikeUrl, type Hit, type Range } from "./api";
+import { t } from "./i18n.svelte";
 
 export type Kind =
   | "table"
@@ -33,20 +34,10 @@ export const TAGS: Record<Kind, string> = {
   calc: "=",
 };
 
-export const LABELS: Record<Kind, string> = {
-  table: "文本 · 含表格",
-  text: "文本",
-  lines: "多行文本",
-  id: "标识符",
-  addr: "Solana 地址",
-  sig: "交易签名",
-  url: "网址",
-  cmd: "命令",
-  num: "数字",
-  path: "路径",
-  snippet: "Snippet",
-  calc: "计算",
-};
+/** Name of a kind in the preview header and the excerpt line. */
+export function kindLabel(kind: Kind): string {
+  return t.kinds[kind];
+}
 
 const BASE58 = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const COMMAND = /^(\$ |sudo |\.\/|cargo |git |npm |npx |pnpm |yarn |rg |grep |ssh |scp |docker |kubectl |cd |ls |cat |tail |curl |wget |python3? |pip |make |systemctl |journalctl |solana |anchor )/;
@@ -178,15 +169,15 @@ const abbreviate = (t: string) => {
 export function transformsFor(kind: Kind): Transform[] {
   const list: Transform[] = [];
   if (kind === "addr" || kind === "sig") {
-    list.push({ id: "abbr", label: "缩写", apply: abbreviate });
+    list.push({ id: "abbr", label: t.transforms.abbr, apply: abbreviate });
   }
   if (kind === "addr") {
-    list.push({ id: "pubkey", label: "Rust 常量", apply: (t) => `pubkey!("${t.trim()}")` });
+    list.push({ id: "pubkey", label: t.transforms.pubkey, apply: (t) => `pubkey!("${t.trim()}")` });
   }
   if (kind === "table") {
     list.push({
       id: "markdown",
-      label: "Markdown 表格",
+      label: t.transforms.markdown,
       apply: (t) =>
         parseBlocks(t)
           .filter((b) => b.type === "table")
@@ -194,12 +185,12 @@ export function transformsFor(kind: Kind): Transform[] {
           .join("\n\n"),
     });
   }
-  list.push({ id: "quote", label: "加引号", apply: (t) => `"${t.trim().replace(/"/g, '\\"')}"` });
+  list.push({ id: "quote", label: t.transforms.quote, apply: (t) => `"${t.trim().replace(/"/g, '\\"')}"` });
   if (kind === "lines" || kind === "table" || kind === "text" || kind === "cmd") {
-    list.push({ id: "oneline", label: "单行", apply: (t) => t.replace(/\s*\r?\n\s*/g, " ").trim() });
-    list.push({ id: "json", label: "JSON 字符串", apply: (t) => JSON.stringify(t) });
+    list.push({ id: "oneline", label: t.transforms.oneline, apply: (t) => t.replace(/\s*\r?\n\s*/g, " ").trim() });
+    list.push({ id: "json", label: t.transforms.json, apply: (t) => JSON.stringify(t) });
   }
-  list.push({ id: "trim", label: "去掉首尾空白", apply: (t) => t.trim() });
+  list.push({ id: "trim", label: t.transforms.trim, apply: (t) => t.trim() });
   return list;
 }
 
@@ -208,22 +199,22 @@ export function transformsFor(kind: Kind): Transform[] {
 
 const APP_NAMES: Record<string, [string, string]> = {
   windowsterminal: ["Windows Terminal", "wt"],
-  openconsole: ["终端", "term"],
+  openconsole: ["Terminal", "term"],
   msedge: ["Edge", "edge"],
   chrome: ["Chrome", "chrome"],
   firefox: ["Firefox", "firefox"],
-  feishu: ["飞书", "飞书"],
+  feishu: ["Feishu", "feishu"],
   lark: ["Lark", "lark"],
   code: ["VS Code", "code"],
   cursor: ["Cursor", "cursor"],
-  explorer: ["资源管理器", "explorer"],
-  weixin: ["微信", "微信"],
-  wechat: ["微信", "微信"],
-  notepad: ["记事本", "notepad"],
+  explorer: ["Explorer", "explorer"],
+  weixin: ["WeChat", "wechat"],
+  wechat: ["WeChat", "wechat"],
+  notepad: ["Notepad", "notepad"],
   winword: ["Word", "word"],
   excel: ["Excel", "excel"],
   powerpnt: ["PowerPoint", "ppt"],
-  dingtalk: ["钉钉", "钉钉"],
+  dingtalk: ["DingTalk", "dingtalk"],
   telegram: ["Telegram", "tg"],
   slack: ["Slack", "slack"],
   discord: ["Discord", "discord"],
@@ -233,22 +224,28 @@ const APP_NAMES: Record<string, [string, string]> = {
   deskflow: ["Deskflow", "deskflow"],
 };
 
+/** Full and short name of a known app, in the UI language when it has its own. */
+function names(stem: string): [string, string] | undefined {
+  const key = stem.toLowerCase();
+  return t.apps[key] ?? APP_NAMES[key];
+}
+
 function exeStem(exe: string): string {
   return exe.replace(/\.exe$/i, "");
 }
 
 /** Friendly name for an executable, e.g. `msedge.exe` -> `Edge`. */
 export function appName(exe: string | null): string {
-  if (!exe) return "前一个窗口";
+  if (!exe) return t.previousWindow;
   const stem = exeStem(exe);
-  return APP_NAMES[stem.toLowerCase()]?.[0] ?? stem;
+  return names(stem)?.[0] ?? stem;
 }
 
 /** Very short name for list rows, e.g. `WindowsTerminal.exe` -> `wt`. */
 export function shortApp(exe: string | null): string {
   if (!exe) return "";
   const stem = exeStem(exe);
-  return APP_NAMES[stem.toLowerCase()]?.[1] ?? stem.toLowerCase().slice(0, 10);
+  return names(stem)?.[1] ?? stem.toLowerCase().slice(0, 10);
 }
 
 /** A piece of text; `hit` when it matched the query. */

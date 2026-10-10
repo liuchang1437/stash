@@ -10,12 +10,13 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::calc;
 use crate::config::Config;
+use crate::i18n;
 use crate::placement::Layout;
 use crate::search::{Filter, Hit, Index, ItemRef, TagCount};
 use crate::template::{self, Field, Part, Segment};
 use crate::{
-    hide_launcher, now, platform, register_hotkey, reload_snippets, snippets, watch_snippets, yank,
-    AppState, ManageRequest, MANAGE_WINDOW,
+    apply_language, hide_launcher, now, platform, register_hotkey, reload_snippets, snippets,
+    watch_snippets, yank, AppState, ManageRequest, MANAGE_WINDOW,
 };
 
 type CmdResult<T> = Result<T, String>;
@@ -25,7 +26,7 @@ fn err<E: std::fmt::Display>(e: E) -> String {
 }
 
 fn parse_key(key: &str) -> CmdResult<ItemRef> {
-    ItemRef::parse(key).ok_or_else(|| format!("无效的条目：{key}"))
+    ItemRef::parse(key).ok_or_else(|| i18n::invalid_item(key))
 }
 
 #[tauri::command]
@@ -107,7 +108,7 @@ pub fn activate(
         ItemRef::Clip(_) | ItemRef::Snippet(_) => {
             let (title, body) = {
                 let index = state.index.read().unwrap();
-                let entry = index.get(&item).ok_or("条目不存在")?;
+                let entry = index.get(&item).ok_or(i18n::tr("条目不存在", "Item not found"))?;
                 (entry.title.clone(), entry.body.clone())
             };
             if matches!(item, ItemRef::Clip(_)) {
@@ -132,10 +133,13 @@ pub fn activate(
     };
 
     if mode == Mode::Open {
-        let url = as_web_url(&text).ok_or("内容不是网址，无法用浏览器打开")?;
+        let url = as_web_url(&text).ok_or(i18n::tr(
+            "内容不是网址，无法用浏览器打开",
+            "Not a web address, so it can't be opened in a browser",
+        ))?;
         app.opener()
             .open_url(url, None::<&str>)
-            .map_err(|e| format!("打开浏览器失败：{e}"))?;
+            .map_err(i18n::browser_failed)?;
         hide_launcher(&app);
     } else {
         deliver(&app, text, cursor_back, mode == Mode::Paste);
@@ -226,10 +230,10 @@ fn deliver(app: &AppHandle, text: String, cursor_back: usize, paste: bool) {
 #[tauri::command]
 pub fn toggle_pin(state: State<'_, AppState>, key: String) -> CmdResult<bool> {
     let ItemRef::Clip(id) = parse_key(&key)? else {
-        return Err("只有剪贴板记录可以置顶".into());
+        return Err(i18n::tr("只有剪贴板记录可以置顶", "Only clipboard entries can be pinned").into());
     };
     let mut index = state.index.write().unwrap();
-    let entry = index.get_mut(&ItemRef::Clip(id)).ok_or("条目不存在")?;
+    let entry = index.get_mut(&ItemRef::Clip(id)).ok_or(i18n::tr("条目不存在", "Item not found"))?;
     let pinned = !entry.pinned;
     state.db.lock().unwrap().set_pinned(id, pinned).map_err(err)?;
     entry.pinned = pinned;
@@ -242,7 +246,7 @@ pub fn delete_item(state: State<'_, AppState>, key: String) -> CmdResult<()> {
     match &item {
         ItemRef::Clip(id) => state.db.lock().unwrap().delete_clip(*id).map_err(err)?,
         ItemRef::Snippet(path) => snippets::delete(&state.snippets_dir(), path).map_err(err)?,
-        ItemRef::Calc(_) => return Err("计算结果不能删除".into()),
+        ItemRef::Calc(_) => return Err(i18n::tr("计算结果不能删除", "Calculator results can't be deleted").into()),
     }
     state.index.write().unwrap().remove(&item);
     Ok(())
@@ -252,10 +256,10 @@ pub fn delete_item(state: State<'_, AppState>, key: String) -> CmdResult<()> {
 pub fn get_snippet(state: State<'_, AppState>, key: String) -> CmdResult<snippets::Snippet> {
     let item = parse_key(&key)?;
     let ItemRef::Snippet(path) = &item else {
-        return Err("不是 snippet".into());
+        return Err(i18n::tr("不是 snippet", "Not a snippet").into());
     };
     let index = state.index.read().unwrap();
-    let entry = index.get(&item).ok_or("条目不存在")?;
+    let entry = index.get(&item).ok_or(i18n::tr("条目不存在", "Item not found"))?;
     Ok(snippets::Snippet {
         path: path.clone(),
         title: entry.title.clone(),
@@ -275,7 +279,7 @@ pub fn save_snippet(
     body: String,
 ) -> CmdResult<String> {
     if title.trim().is_empty() {
-        return Err("标题不能为空".into());
+        return Err(i18n::tr("标题不能为空", "The title can't be empty").into());
     }
     let saved = snippets::save(&state.snippets_dir(), path.as_deref(), &title, &tags, &body)
         .map_err(err)?;
@@ -311,11 +315,15 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     new.swap_hotkey = new.swap_hotkey.trim().to_string();
     if !new.swap_hotkey.is_empty() {
         if new.swap_hotkey.eq_ignore_ascii_case(&new.hotkey) {
-            return Err("「换一条」快捷键不能和唤起快捷键相同".into());
+            return Err(i18n::tr(
+                "「换一条」快捷键不能和唤起快捷键相同",
+                "The swap hotkey must be different from the launcher hotkey",
+            )
+            .into());
         }
         new.swap_hotkey
             .parse::<tauri_plugin_global_shortcut::Shortcut>()
-            .map_err(|e| format!("无法识别快捷键 “{}”：{e}", new.swap_hotkey))?;
+            .map_err(|e| i18n::invalid_hotkey(&new.swap_hotkey, e))?;
     }
     new.history_limit = new.history_limit.max(10);
     let old = state.config.read().unwrap().clone();
@@ -332,6 +340,7 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     let dir_changed = new.snippets_dir.trim() != old.snippets_dir.trim();
     let limit = new.history_limit;
     *state.config.write().unwrap() = new;
+    apply_language(&app);
 
     if dir_changed {
         watch_snippets(&app);
@@ -347,9 +356,16 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     let autolaunch = app.autolaunch();
     if settings.autostart != autolaunch.is_enabled().unwrap_or(false) {
         let result = if settings.autostart { autolaunch.enable() } else { autolaunch.disable() };
-        result.map_err(|e| format!("设置开机启动失败：{e}"))?;
+        result.map_err(i18n::autostart_failed)?;
     }
     Ok(())
+}
+
+/// The UI language `config.language` resolves to; a `language` event
+/// follows whenever it changes.
+#[tauri::command]
+pub fn language() -> i18n::Lang {
+    i18n::current()
 }
 
 #[tauri::command]
@@ -453,7 +469,7 @@ pub fn preview_snippet(
         .unwrap()
         .get(&item)
         .map(|e| e.body.clone())
-        .ok_or("条目不存在")?;
+        .ok_or(i18n::tr("条目不存在", "Item not found"))?;
     let parts = template::parse(&body);
     let (clipboard, history) = template_inputs(&state, &parts);
     Ok(template::render_segments(
@@ -485,7 +501,7 @@ pub fn editable_text(
         .unwrap()
         .get(&item)
         .map(|e| e.body.clone())
-        .ok_or("条目不存在")?;
+        .ok_or(i18n::tr("条目不存在", "Item not found"))?;
     if !matches!(item, ItemRef::Snippet(_)) {
         return Ok(EditableText { text: body, cursor_back: 0 });
     }
@@ -532,10 +548,13 @@ pub fn activate_text(
     mode: Mode,
 ) -> CmdResult<()> {
     if mode == Mode::Open {
-        let url = as_web_url(&text).ok_or("内容不是网址，无法用浏览器打开")?;
+        let url = as_web_url(&text).ok_or(i18n::tr(
+            "内容不是网址，无法用浏览器打开",
+            "Not a web address, so it can't be opened in a browser",
+        ))?;
         app.opener()
             .open_url(url, None::<&str>)
-            .map_err(|e| format!("打开浏览器失败：{e}"))?;
+            .map_err(i18n::browser_failed)?;
         hide_launcher(&app);
     } else {
         deliver(&app, text, 0, mode == Mode::Paste);
@@ -570,11 +589,14 @@ pub fn open_explorer(app: AppHandle, state: State<'_, AppState>, key: String) ->
         .unwrap()
         .get(&item)
         .map(|e| e.body.clone())
-        .ok_or("条目不存在")?;
-    let url = solana_explorer_url(&body).ok_or("不是 Solana 地址或交易签名")?;
+        .ok_or(i18n::tr("条目不存在", "Item not found"))?;
+    let url = solana_explorer_url(&body).ok_or(i18n::tr(
+        "不是 Solana 地址或交易签名",
+        "Not a Solana address or transaction signature",
+    ))?;
     app.opener()
         .open_url(url, None::<&str>)
-        .map_err(|e| format!("打开浏览器失败：{e}"))?;
+        .map_err(i18n::browser_failed)?;
     hide_launcher(&app);
     record_use(&state, &item)
 }

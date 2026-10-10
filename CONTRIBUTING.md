@@ -25,7 +25,7 @@ cd src-tauri && cargo test
 
 - Quit any running `stash.exe` first: Windows locks the executable, so `cargo test` / `cargo build` fail while the app is running.
 - `npm run check` (svelte-check / TypeScript) is the only frontend check; there are no frontend tests. Rust tests live in `#[cfg(test)]` modules at the bottom of each source file.
-- Keep the user-facing text in Chinese, matching the rest of the UI.
+- The UI comes in Chinese and English. Add every new string to both `src/lib/locales/zh.ts` and `src/lib/locales/en.ts` and use it through `t` (`npm run check` fails if `en.ts` is missing a key). Texts shown by the Rust side go through `i18n::tr` in `src-tauri/src/i18n.rs`.
 - If you change behavior that the docs describe, update both [docs/guide.md](docs/guide.md) and [docs/guide.zh-CN.md](docs/guide.zh-CN.md) (and both READMEs if it affects them).
 - If you add a snippet variable or change the template syntax, update `src-tauri/src/template.rs`, `src/lib/template.ts` and the variable tables in both guides.
 
@@ -44,6 +44,7 @@ src-tauri/src/
   snippets.rs     reading and writing .md snippet files
   db.rs           SQLite: clipboard history, snippet usage stats
   config.rs       settings
+  i18n.rs         UI language; tray menu and error texts in Chinese and English
   migrate.rs      migrating data from the old name "Box"
   platform/       OS-specific code (Windows only for now): clipboard, caret lookup, key input
 src/lib/
@@ -57,6 +58,8 @@ src/lib/
   editor.ts       snippet editor (CodeMirror): variable highlighting, errors, {{ completion
   template.ts     frontend view of the variable syntax: parsing for highlighting, insertable variables
   kinds.ts        content type detection, table parsing, "paste as…" transformations
+  i18n.svelte.ts  current UI language and `t`, the text in that language
+  locales/        zh.ts and en.ts: all UI text
 ```
 
 [CLAUDE.md](CLAUDE.md) has more detailed architecture notes: how state, search, the paste flow, windows and the platform layer fit together.
