@@ -7,9 +7,10 @@
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
 use pinyin::ToPinyin;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::db::{ClipRow, Usage};
+use crate::highlight::{self, Range};
 use crate::snippets::Snippet;
 
 /// Only this many characters of a body are indexed.
@@ -153,12 +154,65 @@ fn pinyin_forms(text: &str) -> Option<(String, String)> {
     any.then_some((full, initials))
 }
 
+/// Which items a search covers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    #[default]
+    All,
+    Clip,
+    Snippet,
+    Pinned,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Filter {
+    #[serde(default)]
+    pub source: Source,
+    /// Only snippets with this tag (case-insensitive).
+    #[serde(default)]
+    pub tag: Option<String>,
+}
+
+impl Filter {
+    /// No scope picked: everything, plus the calculator.
+    pub fn is_all(&self) -> bool {
+        self.source == Source::All && self.tag.is_none()
+    }
+
+    fn snippets_only(&self) -> bool {
+        self.source == Source::Snippet || self.tag.is_some()
+    }
+
+    fn accepts(&self, e: &Entry) -> bool {
+        if let Some(tag) = &self.tag {
+            let tag = tag.to_lowercase();
+            return e.tags.iter().any(|t| t.to_lowercase() == tag);
+        }
+        match self.source {
+            Source::All => true,
+            Source::Clip => matches!(e.item, ItemRef::Clip(_)),
+            Source::Snippet => matches!(e.item, ItemRef::Snippet(_)),
+            Source::Pinned => e.pinned,
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Hit {
     pub key: String,
     pub kind: &'static str,
+    /// For a clip, the first line, or the line that matched the query.
     pub title: String,
+    /// Matched parts of `title`.
+    pub title_marks: Vec<Range>,
+    /// A snippet found by its body: the line that matched.
+    pub context: Option<String>,
+    pub context_marks: Vec<Range>,
+    /// Pieces of `preview` the preview pane highlights.
+    pub terms: Vec<String>,
     pub preview: String,
     pub tags: Vec<String>,
     pub source: Option<String>,
@@ -178,6 +232,10 @@ impl Hit {
                 ItemRef::Calc(_) => "calc",
             },
             title: entry.title.clone(),
+            title_marks: Vec::new(),
+            context: None,
+            context_marks: Vec::new(),
+            terms: Vec::new(),
             preview: entry.body.chars().take(PREVIEW_CHARS).collect(),
             tags: entry.tags.clone(),
             source: entry.source.clone(),
@@ -188,6 +246,38 @@ impl Hit {
         }
     }
 
+    /// A search result with what matched marked. A clip whose first line
+    /// lacks some of the words shows the line that has the most instead;
+    /// a snippet keeps its title and shows that line as `context`.
+    fn matched(entry: &Entry, pattern: &Pattern, matcher: &mut Matcher) -> Self {
+        let mut hit = Hit::from(entry);
+        let in_title = highlight::find(pattern, matcher, &entry.title);
+        let title_words = in_title.as_ref().map_or(0, |f| f.words);
+        // The match can only come from the indexed part of the body.
+        let indexed: String = entry.body.chars().take(INDEXED_CHARS).collect();
+        let in_body = if title_words < highlight::word_count(pattern) {
+            highlight::best_line(pattern, matcher, &indexed).filter(|(_, f)| f.words > title_words)
+        } else {
+            None
+        };
+        match (&entry.item, in_title, in_body) {
+            (ItemRef::Clip(_), _, Some((line, found))) => {
+                (hit.title, hit.title_marks) = highlight::row(line, &found.chars);
+            }
+            (ItemRef::Snippet(_), None, Some((line, found))) => {
+                let (context, marks) = highlight::row(line, &found.chars);
+                hit.context = Some(context);
+                hit.context_marks = marks;
+            }
+            (_, Some(found), _) => {
+                (hit.title, hit.title_marks) = highlight::row(&entry.title, &found.chars);
+            }
+            _ => {}
+        }
+        hit.terms = highlight::terms(pattern, &hit.preview);
+        hit
+    }
+
     /// Calculator row: `title` is the result, `preview` the expression.
     pub fn calculation(expression: &str, result: String) -> Self {
         Hit {
@@ -195,6 +285,10 @@ impl Hit {
             kind: "calc",
             chars: result.chars().count(),
             title: result,
+            title_marks: Vec::new(),
+            context: None,
+            context_marks: Vec::new(),
+            terms: Vec::new(),
             preview: expression.to_string(),
             tags: Vec::new(),
             source: None,
@@ -265,11 +359,32 @@ impl Index {
         clips
     }
 
-    pub fn query(&self, query: &str, now: i64, limit: usize) -> Vec<Hit> {
-        let all = self.clips.iter().chain(self.snippets.iter());
+    /// Snippet tags, most common first, with how many snippets carry each.
+    pub fn tags(&self) -> Vec<TagCount> {
+        let mut out: Vec<TagCount> = Vec::new();
+        for tag in self.snippets.iter().flat_map(|e| &e.tags) {
+            let lower = tag.to_lowercase();
+            match out.iter_mut().find(|t| t.name.to_lowercase() == lower) {
+                Some(t) => t.count += 1,
+                None => out.push(TagCount { name: tag.clone(), count: 1 }),
+            }
+        }
+        out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+        out
+    }
+
+    pub fn query(&self, query: &str, filter: &Filter, now: i64, limit: usize) -> Vec<Hit> {
+        let all = self
+            .clips
+            .iter()
+            .chain(self.snippets.iter())
+            .filter(|e| filter.accepts(e));
         let query = query.trim();
 
         if query.is_empty() {
+            if filter.snippets_only() {
+                return all_snippets(all.collect(), now).into_iter().take(limit).map(Hit::from).collect();
+            }
             // Pinned first, then whatever was touched most recently. Snippets
             // that were never used stay out of the default list.
             let mut entries: Vec<&Entry> = all.filter(|e| e.last_used_at > 0 || e.pinned).collect();
@@ -299,8 +414,33 @@ impl Index {
             })
             .collect();
         scored.sort_by(|a, b| b.0.total_cmp(&a.0));
-        scored.into_iter().take(limit).map(|(_, e)| Hit::from(e)).collect()
+        scored
+            .into_iter()
+            .take(limit)
+            .map(|(_, e)| Hit::matched(e, &pattern, &mut matcher))
+            .collect()
     }
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct TagCount {
+    pub name: String,
+    pub count: usize,
+}
+
+/// Browsing snippets: the used ones by frecency, then the rest by title
+/// (Chinese titles by pinyin).
+fn all_snippets(entries: Vec<&Entry>, now: i64) -> Vec<&Entry> {
+    let (mut used, mut unused): (Vec<&Entry>, Vec<&Entry>) =
+        entries.into_iter().partition(|e| e.last_used_at > 0);
+    used.sort_by(|a, b| rank_bonus(b, now).total_cmp(&rank_bonus(a, now)));
+    unused.sort_by_cached_key(|e| {
+        pinyin_forms(&e.title)
+            .map_or_else(|| e.title.clone(), |(full, _)| full)
+            .to_lowercase()
+    });
+    used.extend(unused);
+    used
 }
 
 /// Newer clips have larger ids; breaks ties between copies in the same second.
@@ -337,20 +477,106 @@ mod tests {
         }
     }
 
+    fn snippet(path: &str, title: &str, tags: &[&str], body: &str, last_used_at: i64) -> Entry {
+        let snippet = Snippet {
+            path: path.into(),
+            title: title.into(),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            body: body.into(),
+        };
+        Entry::from_snippet(&snippet, Usage { use_count: (last_used_at > 0) as u32, last_used_at })
+    }
+
+    fn keys(hits: &[Hit]) -> Vec<&str> {
+        hits.iter().map(|h| h.key.as_str()).collect()
+    }
+
+    fn scope(source: Source) -> Filter {
+        Filter { source, tag: None }
+    }
+
     #[test]
     fn matches_pinyin_initials() {
         let mut index = Index::default();
         index.set_clips(&[clip(1, "你好世界", 10), clip(2, "hello", 10)]);
-        let hits = index.query("nhsj", 10, 10);
+        let hits = index.query("nhsj", &Filter::default(), 10, 10);
         assert_eq!(hits[0].key, "c:1");
+        assert_eq!(hits[0].title_marks, vec![[0, 4]]);
     }
 
     #[test]
     fn empty_query_lists_recent_first() {
         let mut index = Index::default();
         index.set_clips(&[clip(1, "old", 1), clip(2, "new", 5)]);
-        let hits = index.query("", 10, 10);
-        assert_eq!(hits.iter().map(|h| h.key.as_str()).collect::<Vec<_>>(), ["c:2", "c:1"]);
+        let hits = index.query("", &Filter::default(), 10, 10);
+        assert_eq!(keys(&hits), ["c:2", "c:1"]);
+    }
+
+    #[test]
+    fn scopes_limit_the_items() {
+        let mut index = Index::default();
+        let mut pinned = clip(2, "note b", 5);
+        pinned.pinned = true;
+        index.set_clips(&[clip(1, "note a", 5), pinned]);
+        index.set_snippets(vec![
+            snippet("x.md", "note x", &["work"], "", 5),
+            snippet("y.md", "note y", &["Home"], "", 5),
+        ]);
+        let search = |filter: &Filter| {
+            let mut k: Vec<String> = keys(&index.query("note", filter, 10, 10)).into_iter().map(String::from).collect();
+            k.sort();
+            k
+        };
+        assert_eq!(search(&scope(Source::Clip)), ["c:1", "c:2"]);
+        assert_eq!(search(&scope(Source::Snippet)), ["s:x.md", "s:y.md"]);
+        assert_eq!(search(&scope(Source::Pinned)), ["c:2"]);
+        let tagged = Filter { source: Source::Snippet, tag: Some("home".into()) };
+        assert_eq!(search(&tagged), ["s:y.md"]);
+    }
+
+    #[test]
+    fn snippet_scope_lists_unused_snippets_too() {
+        let mut index = Index::default();
+        index.set_snippets(vec![
+            snippet("b.md", "报告", &[], "", 0),
+            snippet("a.md", "Apple", &[], "", 0),
+            snippet("u.md", "Used", &[], "", 5),
+        ]);
+        assert!(index.query("", &Filter::default(), 10, 10).len() == 1);
+        // Used first, then by title, Chinese by pinyin (报告 = baogao).
+        let hits = index.query("", &scope(Source::Snippet), 10, 10);
+        assert_eq!(keys(&hits), ["s:u.md", "s:a.md", "s:b.md"]);
+    }
+
+    #[test]
+    fn clips_show_the_line_that_matched() {
+        let mut index = Index::default();
+        index.set_clips(&[clip(1, "first line\nsecond line has the token", 5)]);
+        let hits = index.query("token", &Filter::default(), 10, 10);
+        assert_eq!(hits[0].title, "…has the token");
+        assert_eq!(hits[0].terms, ["token"]);
+    }
+
+    #[test]
+    fn snippets_show_the_body_line_as_context() {
+        let mut index = Index::default();
+        index.set_snippets(vec![snippet("r.md", "Report", &[], "intro\nsee deploy notes", 5)]);
+        let hit = &index.query("deploy", &Filter::default(), 10, 10)[0];
+        assert_eq!(hit.title, "Report");
+        assert_eq!(hit.context.as_deref(), Some("see deploy notes"));
+        assert_eq!(hit.context_marks, vec![[4, 10]]);
+    }
+
+    #[test]
+    fn counts_tags_case_insensitively() {
+        let mut index = Index::default();
+        index.set_snippets(vec![
+            snippet("a.md", "a", &["work", "mail"], "", 0),
+            snippet("b.md", "b", &["Work"], "", 0),
+        ]);
+        let tags = index.tags();
+        assert_eq!(tags[0], TagCount { name: "work".into(), count: 2 });
+        assert_eq!(tags[1], TagCount { name: "mail".into(), count: 1 });
     }
 
     #[test]

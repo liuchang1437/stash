@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { relativeTime, type Hit } from "./api";
-  import { appName, LABELS, lineCount, parseBlocks, templatePieces, type Kind } from "./kinds";
+  import { appName, LABELS, lineCount, markTerms, parseBlocks, templatePieces, type Kind } from "./kinds";
 
   type Props = { hit: Hit; kind: Kind; raw: boolean; onToggle: () => void };
   let { hit, kind, raw, onToggle }: Props = $props();
@@ -14,7 +15,22 @@
   export function scroll(delta: number) {
     body?.scrollBy({ top: delta });
   }
+
+  // A new item (or view) starts at its first match, or at the top.
+  $effect(() => {
+    hit.key;
+    hit.terms;
+    raw;
+    tick().then(() => {
+      if (!body) return;
+      const mark = body.querySelector("mark");
+      const offset = mark ? mark.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop : 0;
+      body.scrollTop = Math.max(0, offset - 40);
+    });
+  });
 </script>
+
+{#snippet marked(text: string)}{#each markTerms(text, hit.terms) as p}{#if p.hit}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}{/snippet}
 
 <section class="peek">
   <header>
@@ -33,26 +49,26 @@
   <div class="body" bind:this={body}>
     {#if kind === "snippet"}
       <pre class="template">{#each templatePieces(hit.preview) as piece}{#if piece.variable}<span
-              class="var">{piece.text}</span
-            >{:else}{piece.text}{/if}{/each}</pre>
+              class="var">{@render marked(piece.text)}</span
+            >{:else}{@render marked(piece.text)}{/if}{/each}</pre>
     {:else}
       {#each blocks as block}
         {#if block.type === "text"}
-          <pre class="text">{block.text}</pre>
+          <pre class="text">{@render marked(block.text)}</pre>
         {:else if raw}
-          <pre class="raw-table">{block.raw}</pre>
+          <pre class="raw-table">{@render marked(block.raw)}</pre>
         {:else}
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  {#each block.rows[0] as cell}<th>{cell}</th>{/each}
+                  {#each block.rows[0] as cell}<th>{@render marked(cell)}</th>{/each}
                 </tr>
               </thead>
               <tbody>
                 {#each block.rows.slice(1) as row}
                   <tr>
-                    {#each row as cell}<td>{cell}</td>{/each}
+                    {#each row as cell}<td>{@render marked(cell)}</td>{/each}
                   </tr>
                 {/each}
               </tbody>

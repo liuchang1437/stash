@@ -5,31 +5,48 @@
   import Peek from "./Peek.svelte";
   import { MARGIN, placePanels } from "./layout";
   import {
+    ALL,
     api,
     groupDigits,
+    SEARCH_LIMIT,
     shortTime,
     type CalcDetail,
     type Field,
+    type Filter,
     type Hit,
     type Mode,
     type Segment,
     type Shown,
+    type TagCount,
   } from "./api";
   import {
     appName,
     detectKind,
-    highlight,
     isSolana,
     LABELS,
     lineCount,
     shortApp,
+    splitMarks,
     TAGS,
     transformsFor,
     type Kind,
+    type Piece,
   } from "./kinds";
 
   /** Height the popover may need; less room than this below the caret flips it up. */
   const NEEDED_BELOW = 380;
+
+  /** Scopes offered by `#` besides snippet tags. */
+  const SCOPES: { name: string; label: string; filter: Filter }[] = [
+    { name: "clip", label: "剪贴板", filter: { source: "clip", tag: null } },
+    { name: "snip", label: "Snippets", filter: { source: "snippet", tag: null } },
+    { name: "pin", label: "置顶", filter: { source: "pinned", tag: null } },
+  ];
+  /** What Ctrl+Tab cycles through. */
+  const CYCLE: Filter["source"][] = ["all", "clip", "snippet"];
+
+  /** A `#…` completion: a scope or a snippet tag. */
+  type Suggestion = { name: string; note: string; filter: Filter };
 
   type Phase = "list" | "fill" | "menu";
   type Fill = {
@@ -55,6 +72,9 @@
   let subIndex = $state(-1);
   let status = $state("");
   let confirmDelete = $state<string | null>(null);
+  let filter = $state.raw<Filter>(ALL);
+  let tags = $state.raw<TagCount[]>([]);
+  let suggestIndex = $state(0);
 
   let shown = $state<Shown>({
     keepQuery: false,
@@ -78,6 +98,80 @@
   const kinds = $derived(hits.map(detectKind));
 
   const peekShown = $derived(peekOpen && !!current && !!kind && kind !== "calc");
+
+  // -------------------------------------------------------------------------
+  // Scope: Ctrl+Tab or `#…` narrows the list to the clipboard, snippets,
+  // pinned clips or one snippet tag.
+
+  function scopeLabel(f: Filter): string | null {
+    if (f.tag) return "#" + f.tag;
+    return SCOPES.find((s) => s.filter.source === f.source)?.label ?? null;
+  }
+
+  const scope = $derived(scopeLabel(filter));
+
+  /** `#…` alone in the input lists scopes and tags instead of results. */
+  const suggestions = $derived.by<Suggestion[]>(() => {
+    const m = /^#(\S*)$/.exec(query);
+    if (!m) return [];
+    const typed = m[1].toLowerCase();
+    const all: Suggestion[] = [
+      ...SCOPES.map((s) => ({ name: s.name, note: s.label, filter: s.filter })),
+      ...tags.map((t) => ({
+        name: t.name,
+        note: `标签 · ${t.count} 个 snippet`,
+        filter: { source: "snippet", tag: t.name } as Filter,
+      })),
+    ];
+    const starts = (s: Suggestion) => Number(s.name.toLowerCase().startsWith(typed));
+    return all.filter((s) => s.name.toLowerCase().includes(typed)).sort((a, b) => starts(b) - starts(a));
+  });
+  const completing = $derived(suggestions.length > 0);
+
+  /** Browsing the clipboard: rows are grouped by day. */
+  const groups = $derived(filter.source === "clip" && !query.trim() ? hits.map(dayGroup) : null);
+
+  function dayGroup(hit: Hit): string {
+    if (hit.pinned) return "置顶";
+    const midnight = new Date().setHours(0, 0, 0, 0) / 1000;
+    if (hit.lastUsedAt >= midnight) return "今天";
+    if (hit.lastUsedAt >= midnight - 86400) return "昨天";
+    return "更早";
+  }
+
+  const placeholder = $derived.by(() => {
+    if (!scope) return "搜索，# 筛选，或输入算式 2*$1";
+    // A space between Chinese and Latin text.
+    return /^[\x00-\x7f]/.test(scope) ? `在 ${scope} 中搜索` : `在${scope}中搜索`;
+  });
+
+  const countLabel = $derived.by(() => {
+    if (completing) return "筛选";
+    if (!query && !scope) return "^Tab 切换类别";
+    const n = hits.filter((h) => h.kind !== "calc").length;
+    return `${n}${n >= SEARCH_LIMIT ? "+" : ""} 条`;
+  });
+
+  const emptyText = $derived.by(() => {
+    if (query) return "没有匹配的结果";
+    if (filter.tag || filter.source === "snippet") return "没有 snippet，^N 新建一个";
+    if (filter.source === "pinned") return "没有置顶的记录，^P 置顶选中的一条";
+    return "还没有记录，复制点什么试试";
+  });
+
+  function applyFilter(f: Filter) {
+    filter = f;
+    query = "";
+  }
+
+  function cycleScope(delta: number) {
+    const at = filter.tag ? CYCLE.indexOf("snippet") : CYCLE.indexOf(filter.source);
+    filter = { source: CYCLE[(at + delta + CYCLE.length) % CYCLE.length], tag: null };
+  }
+
+  function loadTags() {
+    api.snippetTags().then((t) => (tags = t));
+  }
 
   // -------------------------------------------------------------------------
   // Panel placement
@@ -141,8 +235,13 @@
 
   async function refresh() {
     const seq = ++searchSeq;
+    if (completing) {
+      hits = [];
+      calc = null;
+      return;
+    }
     const q = query;
-    const result = await api.search(q);
+    const result = await api.search(q, filter);
     if (seq !== searchSeq) return;
     const detail = result[0]?.kind === "calc" ? await api.calcDetail(q) : null;
     if (seq !== searchSeq) return;
@@ -153,7 +252,9 @@
 
   $effect(() => {
     query;
+    filter;
     selected = 0;
+    suggestIndex = 0;
     calcFormat = 0;
     confirmDelete = null;
     refresh();
@@ -171,16 +272,17 @@
     status = "";
     closePanels();
     confirmDelete = null;
-    if (query === "") {
+    if (query === "" && filter === ALL) {
       selected = 0;
       refresh();
     } else {
       query = "";
+      filter = ALL;
     }
     input?.focus();
   }
 
-  /** Reopened shortly after closing: keep the query, selected so typing replaces it. */
+  /** Reopened shortly after closing: keep the query and scope, the query selected so typing replaces it. */
   function resume() {
     status = "";
     closePanels();
@@ -196,12 +298,17 @@
       win.listen<Shown>("launcher-shown", ({ payload }) => {
         shown = payload;
         lastLayout = "";
+        loadTags();
         if (payload.keepQuery) resume();
         else reset();
         reportLayout();
       }),
-      win.listen("index-changed", refresh),
+      win.listen("index-changed", () => {
+        loadTags();
+        refresh();
+      }),
     ];
+    loadTags();
     const onBlur = () => api.hide();
     window.addEventListener("blur", onBlur);
     input.focus();
@@ -493,8 +600,40 @@
     e.preventDefault();
   }
 
+  /** Keys while `#…` suggestions replace the list; true when handled. */
+  function suggestKeydown(e: KeyboardEvent): boolean {
+    if (e.isComposing) return false;
+    const n = suggestions.length;
+    const down = flip ? -1 : 1;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      suggestIndex = (suggestIndex + (e.key === "ArrowDown" ? down : -down) + n) % n;
+      tick().then(() => list?.querySelector(`[data-suggestion="${suggestIndex}"]`)?.scrollIntoView({ block: "nearest" }));
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      applyFilter(suggestions[suggestIndex].filter);
+    } else if (e.key === " ") {
+      // `#work␣` takes an exact match right away; otherwise the space is
+      // typed and `#work …` is searched as text.
+      const typed = query.slice(1).toLowerCase();
+      const exact = suggestions.find((s) => s.name.toLowerCase() === typed);
+      if (!exact) return false;
+      applyFilter(exact.filter);
+    } else {
+      return false;
+    }
+    return true;
+  }
+
   function listKeydown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key === "Tab") {
+      cycleScope(e.shiftKey ? -1 : 1);
+      e.preventDefault();
+      return;
+    }
+    if (completing && suggestKeydown(e)) {
+      e.preventDefault();
+      return;
+    }
     // Opening upwards puts item 1 next to the input, at the bottom.
     const down = flip ? -1 : 1;
     if (e.key === "ArrowDown" || (ctrl && e.key === "j")) move(down);
@@ -525,8 +664,10 @@
       // first; Esc goes straight to clearing / hiding.
       else if (peekOpen && !shown.autoPeek) peekOpen = false;
       else if (query) query = "";
+      else if (scope) filter = ALL;
       else api.hide();
-    } else if (ctrl && e.key === "p") togglePin();
+    } else if (e.key === "Backspace" && !query && scope) filter = ALL;
+    else if (ctrl && e.key === "p") togglePin();
     else if (ctrl && e.key === "d") remove();
     else if (ctrl && e.key === "n") newSnippet();
     else if (ctrl && e.key === "e" && current?.kind === "snippet") api.openManage("edit", current.key);
@@ -547,8 +688,10 @@
       return [tags, hit.useCount ? `用过 ${hit.useCount} 次` : "", "^E 编辑"].filter(Boolean).join(" · ");
     }
     if (k === "lines") {
-      const second = hit.preview.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[1];
-      return `${lineCount(hit.preview)} 行 · ${second ?? ""}`;
+      // The title is the first line, or the line that matched the query.
+      const lines = hit.preview.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const other = lines[0]?.startsWith(hit.title) ? lines[1] : lines[0];
+      return `${lineCount(hit.preview)} 行 · ${other ?? ""}`;
     }
     const parts = [LABELS[k], `${hit.chars.toLocaleString()} 字`];
     if (k === "table") parts.push("→ 看排版");
@@ -564,6 +707,8 @@
 </script>
 
 <svelte:window {onkeydown} />
+
+{#snippet marked(pieces: Piece[])}{#each pieces as p}{#if p.hit}<mark>{p.text}</mark>{:else}{p.text}{/if}{/each}{/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
@@ -582,24 +727,56 @@
     style:top="{geometry.origin.y}px"
   >
     <div class="prompt">
+      {#if scope}
+        <button
+          class="scope"
+          tabindex="-1"
+          title="Backspace 回到全部"
+          onclick={() => {
+            filter = ALL;
+            input.focus();
+          }}>{scope}</button
+        >
+      {/if}
       <span class="caret-mark">›</span>
       <input
         bind:this={input}
         bind:value={query}
-        placeholder="搜索，或输入算式 2*$1"
+        {placeholder}
         spellcheck="false"
         autocomplete="off"
         disabled={phase === "fill"}
       />
       {#if shown.anchor === "mouse"}<span class="note">未找到光标</span>{/if}
-      <span class="count">{query ? `${hits.length} 条` : "最近"}</span>
+      <span class="count">{countLabel}</span>
     </div>
 
     <ul class="list" role="listbox" bind:this={list}>
+      <!-- While completing `#…` there are no hits, and otherwise no suggestions. -->
+      {#each suggestions as s, i (`${s.filter.source}:${s.filter.tag}`)}
+        {@const sel = i === suggestIndex}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <li
+          class="item"
+          class:sel
+          role="option"
+          aria-selected={sel}
+          data-suggestion={i}
+          onclick={() => applyFilter(s.filter)}
+        >
+          <div class="row">
+            <span class="num">{sel ? "▸" : ""}</span>
+            <span class="title">#{s.name}</span>
+            <span class="src">{s.note}</span>
+          </div>
+        </li>
+      {/each}
       {#each hits as hit, i (hit.key)}
         {@const k = kinds[i]}
         {@const sel = i === selected}
-        {@const [pre, hitText, post] = highlight(hit.title || "（空白）", query)}
+        {#if groups && groups[i] !== groups[i - 1]}
+          <li class="divider" role="presentation">{groups[i]}</li>
+        {/if}
         {#if hit.kind === "calc" && calc}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li class="calc" class:sel role="option" aria-selected={sel} data-index={i} onclick={() => (selected = i)}>
@@ -628,7 +805,7 @@
             <span class="num">{sel ? "▸" : i < 9 ? String(i + 1).padStart(2, "0") : "  "}</span>
             <span class="tag {k}">{TAGS[k]}</span>
             {#if hit.pinned}<span class="pin">◆</span>{/if}
-            <span class="title">{pre}{#if hitText}<mark>{hitText}</mark>{/if}{post}</span>
+            <span class="title">{@render marked(splitMarks(hit.title || "（空白）", hit.titleMarks))}</span>
             <span class="src">{hit.kind === "snippet" ? "snippet" : `${shortApp(hit.source)} ${shortTime(hit.lastUsedAt)}`}</span>
           </div>
           {#if sel && phase === "fill" && fill}
@@ -679,12 +856,14 @@
               </div>
             </div>
           {:else if sel && phase !== "fill"}
-            <div class="excerpt">{excerpt(hit, k)}</div>
+            <div class="excerpt">
+              {#if hit.context}{@render marked(splitMarks(hit.context, hit.contextMarks))}{:else}{excerpt(hit, k)}{/if}
+            </div>
           {/if}
           </li>
         {/if}
       {:else}
-        <li class="empty" role="presentation">{query ? "没有匹配的结果" : "还没有记录，复制点什么试试"}</li>
+        {#if !completing}<li class="empty" role="presentation">{emptyText}</li>{/if}
       {/each}
     </ul>
 
@@ -703,6 +882,10 @@
         <span class="seg">↑↓ 选择</span>
         <span class="seg">→ 子菜单</span>
         <span class="seg">Esc 关闭</span>
+      {:else if completing}
+        <span class="seg primary">↵ 筛选</span>
+        <span class="seg">↑↓ 选择</span>
+        <span class="seg">Esc 取消</span>
       {:else if current?.kind === "calc"}
         <span class="seg primary">↵ 粘贴 {calcFormats[calcFormat]?.label ?? ""}</span>
         <span class="seg">⇧↵ 复制</span>
@@ -818,6 +1001,22 @@
     color: var(--accent);
     font-size: 16px;
     font-weight: 700;
+  }
+
+  .scope {
+    flex: none;
+    max-width: 140px;
+    margin-right: -4px;
+    padding: 1px 7px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    background: transparent;
+    font-size: 11.5px;
+    color: var(--accent);
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .prompt input {
@@ -945,6 +1144,13 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .divider {
+    flex: none;
+    padding: 6px 14px 2px 40px;
+    font-size: 10.5px;
+    color: var(--text-faint);
   }
 
   .empty {

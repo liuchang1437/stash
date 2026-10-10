@@ -11,7 +11,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::calc;
 use crate::config::Config;
 use crate::placement::Layout;
-use crate::search::{Hit, ItemRef};
+use crate::search::{Filter, Hit, ItemRef, TagCount};
 use crate::template::{self, Field, Part, Segment};
 use crate::{
     hide_launcher, now, platform, register_hotkey, reload_snippets, snippets, watch_snippets, yank,
@@ -29,14 +29,24 @@ fn parse_key(key: &str) -> CmdResult<ItemRef> {
 }
 
 #[tauri::command]
-pub fn search(state: State<'_, AppState>, query: String) -> Vec<Hit> {
+pub fn search(state: State<'_, AppState>, query: String, filter: Filter) -> Vec<Hit> {
     let index = state.index.read().unwrap();
-    let mut hits = index.query(&query, now(), 100);
+    let mut hits = index.query(&query, &filter, now(), 100);
+    // A scope (clipboard, snippets, a tag) is for browsing; no calculator.
+    if !filter.is_all() {
+        return hits;
+    }
     let clip = |n: usize| index.recent_clips(n).into_iter().nth(n - 1);
     if let Some(calculation) = calc::calculate(&query, clip) {
         hits.insert(0, Hit::calculation(&calculation.expression, calculation.result));
     }
     hits
+}
+
+/// Snippet tags for `#` completion in the popover.
+#[tauri::command]
+pub fn snippet_tags(state: State<'_, AppState>) -> Vec<TagCount> {
+    state.index.read().unwrap().tags()
 }
 
 #[derive(Serialize)]

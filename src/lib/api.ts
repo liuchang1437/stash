@@ -1,9 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 
+/** Half-open range of matched text, in UTF-16 units (JS string indices). */
+export type Range = [number, number];
+
 export type Hit = {
   key: string;
   kind: "clip" | "snippet" | "calc";
+  /** For a clip, the first line, or the line that matched the query. */
   title: string;
+  titleMarks: Range[];
+  /** A snippet found by its body: the line that matched. */
+  context: string | null;
+  contextMarks: Range[];
+  /** Pieces of `preview` to highlight in the preview pane. */
+  terms: string[];
   preview: string;
   tags: string[];
   source: string | null;
@@ -12,6 +22,16 @@ export type Hit = {
   lastUsedAt: number;
   chars: number;
 };
+
+/** Which items a search covers; `tag` limits it to snippets with that tag. */
+export type Filter = { source: "all" | "clip" | "snippet" | "pinned"; tag: string | null };
+
+export const ALL: Filter = { source: "all", tag: null };
+
+/** Most hits `search` returns (`commands::search`). */
+export const SEARCH_LIMIT = 100;
+
+export type TagCount = { name: string; count: number };
 
 /** paste into the previous window, copy only, or open in the browser */
 export type Mode = "paste" | "copy" | "open";
@@ -87,7 +107,8 @@ export type ChipState = {
 };
 
 export const api = {
-  search: (query: string) => invoke<Hit[]>("search", { query }),
+  search: (query: string, filter: Filter) => invoke<Hit[]>("search", { query, filter }),
+  snippetTags: () => invoke<TagCount[]>("snippet_tags"),
   activate: (key: string, mode: Mode, values?: Record<string, string>) =>
     invoke<Activation>("activate", { key, mode, values: values ?? null }),
   activateText: (key: string | null, text: string, mode: Mode) =>
