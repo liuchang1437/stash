@@ -302,15 +302,17 @@
     min-height: 0;
   }
 
+  /* Hints wrap onto a second line rather than being cut off (e.g. when the
+     warning shows, or in a narrow window). */
   .hint {
     display: flex;
-    gap: 14px;
+    flex-wrap: wrap;
+    gap: 4px 14px;
     padding: 6px 16px;
     border-top: 1px solid var(--border-soft);
     font-size: 11.5px;
     color: var(--text-faint);
     white-space: nowrap;
-    overflow: hidden;
   }
 
   .warn {

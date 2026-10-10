@@ -167,8 +167,8 @@ const en: Messages = {
     titlePlaceholder: "Snippet title",
     tagsPlaceholder: "Tags, separated by commas",
     bodyPlaceholder: "Content. Type {{ to insert a variable",
-    typeBraces: "Type <code>{{</code> to insert a variable",
-    selectAndCtrlK: "Select text and press <kbd>Ctrl K</kbd> to make it a variable",
+    typeBraces: "<code>{{</code> inserts a variable",
+    selectAndCtrlK: "<kbd>Ctrl K</kbd> turns a selection into one",
     noFields:
       "No variables to fill in. Type <code>{{</code> or press <kbd>Ctrl K</kbd> to insert one, or select some text first and press <kbd>Ctrl K</kbd> to turn it into a variable.",
     problems: (n) => `${plural(n, "malformed variable", "malformed variables")}, pasted as written`,
