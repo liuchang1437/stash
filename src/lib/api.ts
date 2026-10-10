@@ -103,6 +103,9 @@ export type Segment = { text: string; kind: "text" | "input" | "auto" | "cursor"
 /** A template in the editor: its input fields and what it pastes. */
 export type TemplatePreview = { fields: Field[]; segments: Segment[] };
 
+/** The whole text an item pastes; `cursorBack` characters follow `{{cursor}}`. */
+export type EditableText = { text: string; cursorBack: number };
+
 export type ManageRequest = { view: "settings" | "edit"; key: string | null; body: string | null };
 
 /** Payload of the post-paste chip. */
@@ -131,6 +134,8 @@ export const api = {
     invoke<Segment[]>("preview_snippet", { key, values }),
   previewTemplate: (body: string, values: Record<string, string>) =>
     invoke<TemplatePreview>("preview_template", { body, values }),
+  editableText: (key: string, values: Record<string, string>) =>
+    invoke<EditableText>("editable_text", { key, values }),
   calcDetail: (query: string) => invoke<CalcDetail | null>("calc_detail", { query }),
   openExplorer: (key: string) => invoke<void>("open_explorer", { key }),
   getSettings: () => invoke<Settings>("get_settings"),
