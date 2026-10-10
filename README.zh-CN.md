@@ -2,6 +2,7 @@
 
 [English](README.md) | 简体中文
 
+[![Release](https://img.shields.io/github/v/release/liuchang1437/stash)](https://github.com/liuchang1437/stash/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24c8db)](https://tauri.app)
