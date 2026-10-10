@@ -1,6 +1,6 @@
 [package]
 name = "stash"
-version = "0.1.0"
+version = "0.2.0"
 description = "Clipboard history, snippets and calculator launcher"
 authors = ["liuchang1437"]
 repository = "https://github.com/liuchang1437/stash"
