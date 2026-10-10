@@ -41,13 +41,11 @@ pub(crate) const CHIP_WINDOW: &str = "chip";
 pub(crate) const MANAGE_WINDOW: &str = "manage";
 
 /// Popover geometry used before the UI reports its real size, logical px.
-const POPOVER_WIDTH: f64 = 480.0;
 const POPOVER_HEIGHT: f64 = 360.0;
+/// Mirrors MARGIN / GAP in src/lib/layout.ts, logical px. The card and
+/// preview widths come from the config (`card_width`, `peek_width`).
 const POPOVER_MARGIN: f64 = 20.0;
-/// Mirrors CARD_W / GAP / PEEK_W in src/lib/layout.ts, logical px.
-const CARD_WIDTH: f64 = 440.0;
 const PANEL_GAP: f64 = 8.0;
-const PEEK_WIDTH: f64 = 480.0;
 
 pub struct AppState {
     config: RwLock<Config>,
@@ -99,6 +97,9 @@ struct ShownPayload {
     target_app: Option<String>,
     /// Open the preview panel right away (`config.auto_peek`).
     auto_peek: bool,
+    /// `config.card_width` / `config.peek_width`, logical px.
+    card_width: f64,
+    peek_width: f64,
 }
 
 impl AppState {
@@ -142,9 +143,15 @@ fn show_launcher(app: &AppHandle) {
             .is_some_and(|t| t.elapsed() < keep_for)
     };
 
-    let (follow_caret, auto_peek, english_input) = {
+    let (follow_caret, auto_peek, english_input, card_width, peek_width) = {
         let config = state.config.read().unwrap();
-        (config.follow_caret, config.auto_peek, config.english_input)
+        (
+            config.follow_caret,
+            config.auto_peek,
+            config.english_input,
+            f64::from(config.card_width),
+            f64::from(config.peek_width),
+        )
     };
     // By default the popover opens in the upper middle of the screen, like a
     // launcher; with `follow_caret` it opens at the caret instead. (The
@@ -152,13 +159,20 @@ fn show_launcher(app: &AppHandle) {
     let anchor = if follow_caret {
         find_anchor(&window, (!platform::is_own_window(foreground)).then_some(target))
     } else {
-        center_anchor(&window, auto_peek)
+        // The card and, when it opens by itself, the preview beside it are
+        // centered together.
+        let width = if auto_peek {
+            card_width + PANEL_GAP + peek_width
+        } else {
+            card_width
+        };
+        center_anchor(&window, width)
     };
     *state.anchor.lock().unwrap() = Some(anchor);
     if !visible {
         let space = anchor.space();
         let layout = Layout {
-            width: POPOVER_WIDTH,
+            width: card_width + 2.0 * POPOVER_MARGIN,
             height: POPOVER_HEIGHT,
             card_x: POPOVER_MARGIN,
             margin: POPOVER_MARGIN,
@@ -187,23 +201,20 @@ fn show_launcher(app: &AppHandle) {
             space: anchor.space(),
             target_app: platform::process_name(target),
             auto_peek,
+            card_width,
+            peek_width,
         },
     );
 }
 
-/// Upper middle of the monitor under the mouse. The card and, when it opens
-/// by itself, the preview beside it are centered together.
-fn center_anchor(window: &WebviewWindow, auto_peek: bool) -> Anchor {
+/// Upper middle of the monitor under the mouse, for panels `width` logical
+/// px wide.
+fn center_anchor(window: &WebviewWindow, width: f64) -> Anchor {
     let point = window
         .cursor_position()
         .map(|p| (p.x as i32, p.y as i32))
         .unwrap_or((0, 0));
     let (work, scale) = monitor_at(window, point);
-    let width = if auto_peek {
-        CARD_WIDTH + PANEL_GAP + PEEK_WIDTH
-    } else {
-        CARD_WIDTH
-    };
     Anchor::centered(work, scale, width)
 }
 

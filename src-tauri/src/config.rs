@@ -1,4 +1,5 @@
 use std::fs;
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -35,7 +36,17 @@ pub struct Config {
     /// UI language: `zh`, `en`, or empty to follow the Windows display
     /// language (`i18n::resolve`).
     pub language: String,
+    /// Width of the popover's list card, logical px (`CARD_WIDTHS`).
+    pub card_width: u32,
+    /// Width of the preview beside it, logical px (`PEEK_WIDTHS`).
+    pub peek_width: u32,
 }
+
+/// Allowed list widths: narrower and the status bar no longer fits. The
+/// settings inputs in SettingsView.svelte use the same bounds.
+const CARD_WIDTHS: RangeInclusive<u32> = 400..=800;
+/// Allowed preview widths.
+const PEEK_WIDTHS: RangeInclusive<u32> = 320..=1000;
 
 impl Default for Config {
     fn default() -> Self {
@@ -54,16 +65,26 @@ impl Default for Config {
             english_input: true,
             swap_hotkey: "Alt+V".into(),
             language: String::new(),
+            card_width: 440,
+            peek_width: 480,
         }
     }
 }
 
 impl Config {
     pub fn load(path: &Path) -> Self {
-        fs::read_to_string(path)
+        let mut config: Config = fs::read_to_string(path)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        config.clamp_sizes();
+        config
+    }
+
+    /// Keeps the popover widths in their allowed ranges, whatever the file says.
+    pub fn clamp_sizes(&mut self) {
+        self.card_width = self.card_width.clamp(*CARD_WIDTHS.start(), *CARD_WIDTHS.end());
+        self.peek_width = self.peek_width.clamp(*PEEK_WIDTHS.start(), *PEEK_WIDTHS.end());
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
@@ -83,5 +104,20 @@ impl Config {
 
     pub fn is_ignored(&self, app: Option<&str>) -> bool {
         app.is_some_and(|app| self.ignored_apps.iter().any(|i| i.eq_ignore_ascii_case(app)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn popover_widths_are_clamped() {
+        let mut config: Config = serde_json::from_str(r#"{"cardWidth": 100, "peekWidth": 5000}"#).unwrap();
+        config.clamp_sizes();
+        assert_eq!((config.card_width, config.peek_width), (400, 1000));
+        // Missing fields keep the defaults.
+        let config: Config = serde_json::from_str("{}").unwrap();
+        assert_eq!((config.card_width, config.peek_width), (440, 480));
     }
 }

@@ -95,6 +95,8 @@
     space: { above: 1000, below: 1000, left: 1000, right: 2000 },
     targetApp: null,
     autoPeek: true,
+    cardWidth: 440,
+    peekWidth: 480,
   });
 
   let input: HTMLInputElement;
@@ -205,6 +207,8 @@
       peekHeight: peekShown ? peekHeight : null,
       menuHeight: phase === "menu" ? menuHeight || 280 : null,
       subOverflow,
+      cardWidth: shown.cardWidth,
+      peekWidth: shown.peekWidth,
     }),
   );
 
@@ -806,6 +810,7 @@
     bind:offsetHeight={cardHeight}
     style:left="{geometry.origin.x}px"
     style:top="{geometry.origin.y}px"
+    style:width="{shown.cardWidth}px"
   >
     <div class="prompt">
       {#if scope}
@@ -986,6 +991,7 @@
       class="float"
       style:left="{geometry.origin.x + geometry.peek.x}px"
       style:top="{geometry.origin.y + geometry.peek.y}px"
+      style:width="{shown.peekWidth}px"
       style:visibility={peekHeight ? null : "hidden"}
       bind:offsetHeight={peekHeight}
     >
@@ -1047,7 +1053,6 @@
 
   .card {
     position: absolute;
-    width: 440px;
     display: flex;
     flex-direction: column;
     border-radius: 10px;

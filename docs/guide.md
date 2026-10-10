@@ -141,6 +141,7 @@ Open the settings with `Ctrl ,` or from the tray menu. You can change:
 - The interface language: Same as Windows (the default; Chinese for a Chinese Windows display language, English otherwise), 中文 or English
 - The launcher hotkey (default `Alt+Space`) and the swap-after-paste hotkey (default `Alt+V`; can be turned off)
 - Whether the popover opens next to the text caret, opens the preview automatically, and switches the input method to English
+- The width of the list and of the preview (default 440 and 480 px)
 - The snippets folder (default `Documents\Stash Snippets`)
 - How many clipboard entries to keep (default 5000; pinned entries don't count and are never removed automatically)
 - Programs whose copies are never recorded (1Password, KeePass, KeePassXC and Bitwarden by default)

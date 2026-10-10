@@ -326,6 +326,7 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
             .map_err(|e| i18n::invalid_hotkey(&new.swap_hotkey, e))?;
     }
     new.history_limit = new.history_limit.max(10);
+    new.clamp_sizes();
     let old = state.config.read().unwrap().clone();
 
     if new.hotkey != old.hotkey || state.hotkey_error.lock().unwrap().is_some() {
