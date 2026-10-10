@@ -1,7 +1,7 @@
 // What a clip looks like (table, address, command…), how to show it and
 // what it can be turned into. Pure functions; no Tauri calls.
 
-import { looksLikeUrl, type Hit } from "./api";
+import { looksLikeUrl, type Hit, type Range } from "./api";
 
 export type Kind =
   | "table"
@@ -251,13 +251,35 @@ export function shortApp(exe: string | null): string {
   return APP_NAMES[stem.toLowerCase()]?.[1] ?? stem.toLowerCase().slice(0, 10);
 }
 
-/** Splits `text` around the first case-insensitive occurrence of `query`. */
-export function highlight(text: string, query: string): [string, string, string] {
-  const q = query.trim();
-  if (!q) return [text, "", ""];
-  const at = text.toLowerCase().indexOf(q.toLowerCase());
-  if (at < 0) return [text, "", ""];
-  return [text.slice(0, at), text.slice(at, at + q.length), text.slice(at + q.length)];
+/** A piece of text; `hit` when it matched the query. */
+export type Piece = { text: string; hit: boolean };
+
+/** Splits `text` at the matched ranges the backend computed (sorted). */
+export function splitMarks(text: string, marks: Range[]): Piece[] {
+  const out: Piece[] = [];
+  let at = 0;
+  for (const [start, end] of marks) {
+    if (start > at) out.push({ text: text.slice(at, start), hit: false });
+    out.push({ text: text.slice(start, end), hit: true });
+    at = end;
+  }
+  if (at < text.length || !out.length) out.push({ text: text.slice(at), hit: false });
+  return out;
+}
+
+/** Splits `text` around every occurrence of `terms`, ignoring case. */
+export function markTerms(text: string, terms: string[]): Piece[] {
+  if (!terms.length) return [{ text, hit: false }];
+  const escaped = [...terms].sort((a, b) => b.length - a.length).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const out: Piece[] = [];
+  let at = 0;
+  for (const m of text.matchAll(new RegExp(escaped.join("|"), "gi"))) {
+    if (m.index! > at) out.push({ text: text.slice(at, m.index), hit: false });
+    out.push({ text: m[0], hit: true });
+    at = m.index! + m[0].length;
+  }
+  if (at < text.length || !out.length) out.push({ text: text.slice(at), hit: false });
+  return out;
 }
 
 /** Splits a snippet template into text and `{{variable}}` pieces. */

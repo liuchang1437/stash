@@ -2,6 +2,7 @@ mod calc;
 mod commands;
 mod config;
 mod db;
+mod highlight;
 mod migrate;
 mod placement;
 mod platform;
@@ -610,6 +611,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::search,
+            commands::snippet_tags,
             commands::activate,
             commands::toggle_pin,
             commands::delete_item,
