@@ -183,12 +183,7 @@ const zh = {
     // These contain markup and are rendered with {@html}.
     typeBraces: "输入 <code>{{</code> 插入变量",
     selectAndCtrlK: "选中文字后 <kbd>Ctrl K</kbd> 把它变成变量",
-    noFields:
-      "没有要填写的变量。输入 <code>{{</code> 或按 <kbd>Ctrl K</kbd> 插入一个；也可以先选中一段文字，再按 <kbd>Ctrl K</kbd> 把它变成变量。",
     problems: (n: number) => `${n} 处变量写法有误，会按原文粘贴`,
-    tryValues: "试填变量",
-    previewOnly: "只用于预览，不会保存",
-    tryPlaceholder: "填一个值试试",
     result: "粘贴结果",
     newSnippet: "新建 Snippet",
     turnInto: "把选中的文字变成…",

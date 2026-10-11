@@ -173,12 +173,7 @@ const en: Messages = {
     bodyPlaceholder: "Content. Type {{ to insert a variable",
     typeBraces: "<code>{{</code> inserts a variable",
     selectAndCtrlK: "<kbd>Ctrl K</kbd> turns a selection into one",
-    noFields:
-      "No variables to fill in. Type <code>{{</code> or press <kbd>Ctrl K</kbd> to insert one, or select some text first and press <kbd>Ctrl K</kbd> to turn it into a variable.",
     problems: (n) => `${plural(n, "malformed variable", "malformed variables")}, pasted as written`,
-    tryValues: "Try values",
-    previewOnly: "preview only, not saved",
-    tryPlaceholder: "Try a value",
     result: "Pasted result",
     newSnippet: "New snippet",
     turnInto: "Turn the selection into…",

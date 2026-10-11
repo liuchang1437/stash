@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EditorView } from "@codemirror/view";
   import { onMount, tick } from "svelte";
-  import { api, type Field, type Segment, type Snippet } from "./api";
+  import { api, type Segment, type Snippet } from "./api";
   import CloseButton from "./CloseButton.svelte";
   import { t } from "./i18n.svelte";
   import Rendered from "./Rendered.svelte";
@@ -70,24 +70,18 @@
   }
 
   // -------------------------------------------------------------------------
-  // Preview: the fields the template asks for, and what it pastes with the
-  // values tried out here (the defaults until something is typed).
+  // Preview: what the template pastes with its defaults.
 
-  let fields = $state<Field[]>([]);
   let segments = $state<Segment[]>([]);
-  let values = $state<Record<string, string>>({});
-  let focus = $state<string | null>(null);
   const problems = $derived(tokens(body).filter((t) => t.problem).length);
 
   let previewSeq = 0;
   $effect(() => {
     const template = body;
-    const tried = $state.snapshot(values);
     const seq = ++previewSeq;
     const timer = setTimeout(async () => {
-      const preview = await api.previewTemplate(template, tried).catch(() => null);
+      const preview = await api.previewTemplate(template, {}).catch(() => null);
       if (seq !== previewSeq || !preview) return;
-      fields = preview.fields;
       segments = preview.segments;
     }, 120);
     return () => clearTimeout(timer);
@@ -169,40 +163,8 @@
 
     <aside>
       <section>
-        <h3>{t.editor.tryValues} <span class="note">{t.editor.previewOnly}</span></h3>
-        {#each fields as field (field.name)}
-          <div class="var-row">
-            <span class="vname" title={field.name}>{field.name}</span>
-            {#if field.options.length}
-              <div class="chips">
-                {#each field.options as option}
-                  <button
-                    class:on={(values[field.name] ?? field.default) === option}
-                    onclick={() => (values[field.name] = option)}>{option}</button
-                  >
-                {/each}
-              </div>
-            {:else}
-              <input
-                class="field"
-                bind:value={values[field.name]}
-                placeholder={field.default || t.editor.tryPlaceholder}
-                spellcheck="false"
-                onfocus={() => (focus = field.name)}
-                onblur={() => (focus = null)}
-              />
-            {/if}
-          </div>
-        {:else}
-          <p class="empty">
-            {@html t.editor.noFields}
-          </p>
-        {/each}
-      </section>
-
-      <section>
         <h3>{t.editor.result}</h3>
-        <pre class="result"><Rendered {segments} {focus} /></pre>
+        <pre class="result"><Rendered {segments} /></pre>
       </section>
     </aside>
   </div>
@@ -335,65 +297,6 @@
     font-size: 11.5px;
     font-weight: 500;
     color: var(--text-muted);
-  }
-
-  .note {
-    margin-left: 6px;
-    font-size: 10.5px;
-    color: var(--text-faint);
-  }
-
-  .var-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-
-  .vname {
-    width: 64px;
-    flex: none;
-    font-size: 12px;
-    color: var(--green);
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  .var-row .field {
-    flex: 1;
-    min-width: 0;
-    padding: 3px 8px;
-    font-size: 12px;
-  }
-
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .chips button {
-    height: 22px;
-    padding: 0 7px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: var(--bg);
-    font-size: 11.5px;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .chips button.on {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .empty {
-    margin: 0;
-    font-size: 11.5px;
-    line-height: 1.8;
-    color: var(--text-faint);
   }
 
   .result {

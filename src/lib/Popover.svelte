@@ -5,6 +5,7 @@
   import { t } from "./i18n.svelte";
   import Peek from "./Peek.svelte";
   import { MARGIN, placePanels } from "./layout";
+  import { opensAsUrl } from "./template";
   import {
     ALL,
     api,
@@ -380,7 +381,8 @@
       await run(() => api.openExplorer(hit.key));
       return;
     }
-    if (mode === "open" && hit.kind === "clip" && k !== "url") {
+    // Checked before a snippet asks for its fields, not after they are filled in.
+    if (mode === "open" && (hit.kind === "clip" ? k !== "url" : !opensAsUrl(hit.preview))) {
       flash(t.popover.notUrl);
       return;
     }
@@ -551,7 +553,7 @@
     items.push({ id: "paste", label: snippet ? t.action.fillAndPaste : t.action.paste, keys: "↵", run: () => activate("paste") });
     items.push({ id: "copy", label: t.action.copy, keys: "⇧↵", run: () => activate("copy") });
     if (isSolana(k)) items.push({ id: "solscan", label: t.action.openSolscan, keys: "^↵", run: () => activate("open") });
-    else if (k === "url" || snippet) items.push({ id: "open", label: t.action.openBrowser, keys: "^↵", run: () => activate("open") });
+    else if (k === "url" || (snippet && opensAsUrl(hit.preview))) items.push({ id: "open", label: t.action.openBrowser, keys: "^↵", run: () => activate("open") });
     if (!snippet) {
       const transforms = transformsFor(k);
       items.push({

@@ -117,7 +117,7 @@ Press `Ctrl N` in the popover to create a snippet and `Ctrl E` to edit one. You 
 - Typing `{{` lists every variable along with its current value (today's date, for example). Pick one to insert it, and use `Tab` to jump between the name and the choices.
 - Or write real text first, select the part that should vary (a person's name, say) and press `Ctrl K`. "Fill-in" turns it into `{{name=Alice}}`, with the selection as the default; just give it a name. You can also turn it into choices, a date, a clipboard reference and so on. With nothing selected, `Ctrl K` inserts at the caret.
 - Variables are colored by type. Malformed ones (a variable name containing a space, for example) are marked in red, with the reason on hover; they are pasted as literal text.
-- The side panel lists the variables you will be asked for. You can try out values and see the pasted result update below.
+- The side panel shows the pasted result with the defaults filled in, updated as you type.
 
 ### URL snippets (quick search)
 
@@ -130,7 +130,7 @@ title: Google search
 https://www.google.com/search?q={{query}}
 ```
 
-When opening in the browser, variable values inside the URL are URL-encoded, so non-ASCII text, spaces and `&` come through correctly; when pasting they are left as they are. If the whole URL is a single variable (`{{url}}`), its value is not encoded. Only `http`, `https` and `www.` addresses can be opened.
+When opening in the browser, variable values inside the URL are URL-encoded, so non-ASCII text, spaces and `&` come through correctly; when pasting they are left as they are. If the whole URL is a single variable (`{{url}}`), its value is not encoded. Only `http`, `https` and `www.` addresses can be opened; snippets whose content isn't one don't offer "Open in browser".
 
 Usage counts and other statistics are kept in the local database, not in the snippet files, so using a snippet never triggers a sync.
 

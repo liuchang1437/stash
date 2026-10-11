@@ -4,7 +4,7 @@
 // (`template.rs`); `tokens` mirrors its `parse`/`parse_var`, so keep the
 // two in step.
 
-import type { Segment } from "./api";
+import { looksLikeUrl, type Segment } from "./api";
 import { t } from "./i18n.svelte";
 
 export type TokenKind = "input" | "auto" | "cursor" | "invalid";
@@ -47,6 +47,28 @@ function classify(raw: string): Omit<Token, "from" | "to"> {
   if (name === "cursor") return { kind: "cursor", name };
   if (AUTO.has(name)) return { kind: "auto", name };
   return { kind: "input", name };
+}
+
+/**
+ * Whether "open in browser" applies to a snippet: with each variable standing
+ * in for a word, the template is a single web address
+ * (`https://x/s?q={{q}}`), or it is nothing but one fill-in or clipboard
+ * variable, whose value may be one.
+ */
+export function opensAsUrl(src: string): boolean {
+  const body = src.trim();
+  const found = tokens(body);
+  if (found.length === 1 && found[0].from === 0 && found[0].to === body.length) {
+    return found[0].kind === "input" || found[0].name === "clipboard";
+  }
+  let text = "";
+  let at = 0;
+  for (const token of found) {
+    // Malformed ones are pasted as written.
+    text += body.slice(at, token.from) + (token.kind === "invalid" ? body.slice(token.from, token.to) : "x");
+    at = token.to;
+  }
+  return looksLikeUrl(text + body.slice(at));
 }
 
 /** Splits a template into plain text and its `{{…}}` tokens. */
