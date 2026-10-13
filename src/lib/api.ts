@@ -84,6 +84,8 @@ export type Space = { above: number; below: number; left: number; right: number 
 /** Payload of `launcher-shown`. */
 export type Shown = {
   keepQuery: boolean;
+  /** Pick up the fields being filled in (or the text being edited) where they were left. */
+  resumePending: boolean;
   /** "mouse" when the caret of the target app could not be found. */
   anchor: "caret" | "mouse" | "center";
   space: Space;
@@ -150,6 +152,8 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   hide: () => invoke<void>("hide_window"),
+  /** Filling in fields or editing before pasting, to be resumed on the next show. */
+  setPending: (active: boolean) => invoke<void>("set_pending", { active }),
   placePopover: (layout: Layout) => invoke<void>("place_popover", { layout }),
   openSnippetsDir: () => invoke<void>("open_snippets_dir"),
   openManage: (view: ManageRequest["view"], key?: string | null, body?: string | null) =>

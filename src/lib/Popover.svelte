@@ -92,6 +92,7 @@
 
   let shown = $state<Shown>({
     keepQuery: false,
+    resumePending: false,
     anchor: "caret",
     space: { above: 1000, below: 1000, left: 1000, right: 2000 },
     targetApp: null,
@@ -265,7 +266,15 @@
     if (seq !== searchSeq) return;
     hits = result;
     calc = detail;
-    if (selected >= hits.length) selected = Math.max(0, hits.length - 1);
+    // The row being filled in or edited stays selected wherever it moved
+    // (a new clip arrived, often copied for it).
+    const held = phase === "fill" || phase === "edit" ? (draft?.key ?? fill?.key) : undefined;
+    const at = held ? hits.findIndex((h) => h.key === held) : -1;
+    if (at >= 0) selected = at;
+    else if (held) {
+      closePanels();
+      tick().then(() => input?.focus());
+    } else if (selected >= hits.length) selected = Math.max(0, hits.length - 1);
   }
 
   $effect(() => {
@@ -314,6 +323,31 @@
     });
   }
 
+  // Rust keeps this while the window is hidden, so that the next show can
+  // resume it (`resumePending`).
+  const pending = $derived(phase === "fill" || phase === "edit");
+  $effect(() => {
+    api.setPending(pending);
+  });
+
+  /**
+   * Reopened after leaving fields half filled in or text half edited, most
+   * likely to go and copy something for it: back to where it was left. The
+   * clipboard has probably changed, so the preview is rendered again.
+   */
+  async function resumePending() {
+    status = "";
+    await refresh();
+    if (phase === "fill" && fill) {
+      updatePreview();
+      await tick();
+      focusField(Math.max(0, fill.fields.findIndex((f) => f.name === fill!.focus)), false);
+    } else if (phase === "edit") {
+      peek?.focusEditor();
+    }
+    list?.querySelector(`[data-index="${selected}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+
   onMount(() => {
     const win = getCurrentWebviewWindow();
     const unlisteners = [
@@ -321,7 +355,8 @@
         shown = payload;
         lastLayout = "";
         loadTags();
-        if (payload.keepQuery) resume();
+        if (payload.resumePending && pending) resumePending();
+        else if (payload.keepQuery) resume();
         else reset();
         reportLayout();
       }),
@@ -445,10 +480,11 @@
     if (seq === previewSeq && fill && segments) fill.segments = segments;
   }
 
-  function focusField(i: number) {
+  /** `select` selects a text field's value, so that typing replaces it. */
+  function focusField(i: number, select = true) {
     const el = list?.querySelector<HTMLElement>(`[data-field="${i}"]`);
     el?.focus();
-    if (el instanceof HTMLInputElement) el.select();
+    if (select && el instanceof HTMLInputElement) el.select();
   }
 
   function chooseOption(field: Field, index: number) {
@@ -927,6 +963,8 @@
                       data-field={fi}
                       aria-label={field.name}
                       bind:value={fill.values[field.name]}
+                      placeholder={t.popover.clipRefHint}
+                      title={t.popover.clipRefHint}
                       oninput={updatePreview}
                       onfocus={() => fill && (fill.focus = field.name)}
                       spellcheck="false"

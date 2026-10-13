@@ -23,6 +23,8 @@ The popover opens in the upper middle of the screen under the mouse, with the li
 - The selected row gets an extra summary line. A full preview opens beside the list automatically, on whichever side has more room (the settings can make it open only when you press `→`); `←` closes it. Tables are laid out by default; `Tab` switches to the raw text.
 - A snippet's preview shows what will be pasted: dates and clipboard contents are filled in, variables show their defaults, variables without a default appear as `‹name›`, and `{{cursor}}` is a thin bar. Variables you fill in are green; values filled in automatically are blue (hover to see where they come from). `Tab` switches to the template source.
 - Press `↵` on a snippet with variables and the fields open inline under the row. Pick choices with `1–9` or `← →`, type text directly, and move to the next field with `Tab`. The side preview shows the text to be pasted as you type, with the field you are editing highlighted.
+  - In a field, `$1`, `$2`… stand for the most recent, second most recent… clipboard entry (as in the calculator), anywhere in the text: `see $1` fills in "see " plus what you copied last. To type a literal `$1`, add one more `$`: `$$1`. A `$` not followed by a digit (`$`, `$x`, `100$`) needs no escaping.
+  - If you leave the popover to copy something for a field, the fields wait for you: reopen it within a minute and you are back where you left off, with the values entered so far. `$1` (or `Ctrl V`) then gets you what you just copied, and pasting still goes to the window you started from, not the one you copied from. The same goes for text being edited in the preview (below). `Esc` gives up.
 - Click into the preview text (or press `F2`) to edit what will be pasted. The caret lands where you clicked, and a drag selection stays selected. For a clip you edit the full text; for a snippet you edit the rendered result (pressing `F2` while filling in variables keeps the values entered so far). `Ctrl ↵` pastes, `Ctrl ⇧ ↵` copies, `Esc` discards. The original clip and snippet file are left unchanged, and the edited text is not added to the clipboard history.
 - Stash recognizes what kind of content a clip is (table, command, identifier, Solana address, URL…), and the preview and the `Ctrl K` actions adapt to it.
 - `Ctrl K` opens the action menu. Submenus open as soon as their item is highlighted; `→` moves into them. "Paste as…" converts the text to a single line, a quoted string, a JSON string or a Markdown table. Solana addresses can also be shortened to `3wCv…ijkL` or wrapped as `pubkey!("…")`, and `Ctrl ↵` opens them on Solscan.
@@ -101,7 +103,7 @@ Next week: {{plan}}
 
 | Variable | Meaning |
 |---|---|
-| `{{name}}` `{{name=default}}` `{{env:prod\|dev}}` | Filled in in the popover before pasting (text / with a default / choices) |
+| `{{name}}` `{{name=default}}` `{{env:prod\|dev}}` | Filled in in the popover before pasting (text / with a default / choices); `$N` in the value or default is the N-th most recent clipboard entry, `$$N` a literal `$N` |
 | `{{date}}` `{{time}}` `{{datetime}}` `{{date:yyyy-MM-dd}}` | Current time; supports `yyyy yy MM dd HH hh mm ss` |
 | `{{clipboard}}` | Current clipboard text |
 | `{{clipboard:N}}` | The N-th most recent clipboard entry (1 = latest); after copying A, B, C, `{{clipboard:3}}` is A |

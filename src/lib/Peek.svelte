@@ -58,6 +58,11 @@
     place();
   });
 
+  /** Back to editing, the selection where it was left. */
+  export function focusEditor() {
+    editor?.focus();
+  }
+
   // ---------------------------------------------------------------------------
   // Clicking into the preview edits it, with the caret (or the selection made
   // by dragging) at the same place in the text.

@@ -62,7 +62,7 @@ fn render_snippets(index: &Index, hits: &mut [Hit]) {
         } else {
             ""
         };
-        let history = index.recent_clips(template::history_depth(&parts));
+        let history = index.recent_clips(template::history_depth(&parts, &HashMap::new()));
         hit.rendered = Some(template::render_segments(&parts, &HashMap::new(), current, &history));
     }
 }
@@ -119,10 +119,11 @@ pub fn activate(
                 if !fields.is_empty() && values.is_none() {
                     return Ok(Activation::NeedsInput { title, fields });
                 }
-                let (clipboard, history) = template_inputs(&state, &parts);
+                let values = values.unwrap_or_default();
+                let (clipboard, history) = template_inputs(&state, &parts, &values);
                 let rendered = template::render(
                     &parts,
-                    &values.unwrap_or_default(),
+                    &values,
                     &clipboard,
                     &history,
                     mode == Mode::Open,
@@ -144,12 +145,17 @@ pub fn activate(
     } else {
         deliver(&app, text, cursor_back, mode == Mode::Paste);
     }
+    state.pending.store(false, Ordering::SeqCst);
     record_use(&state, &item)?;
     Ok(Activation::Done)
 }
 
 /// Clipboard text and history entries a template refers to.
-fn template_inputs(state: &AppState, parts: &[Part]) -> (String, Vec<String>) {
+fn template_inputs(
+    state: &AppState,
+    parts: &[Part],
+    values: &HashMap<String, String>,
+) -> (String, Vec<String>) {
     let clipboard = if parts.contains(&Part::Clipboard) {
         platform::read_clipboard_text().unwrap_or_default()
     } else {
@@ -159,7 +165,7 @@ fn template_inputs(state: &AppState, parts: &[Part]) -> (String, Vec<String>) {
         .index
         .read()
         .unwrap()
-        .recent_clips(template::history_depth(parts));
+        .recent_clips(template::history_depth(parts, values));
     (clipboard, history)
 }
 
@@ -374,6 +380,13 @@ pub fn hide_window(app: AppHandle) {
     hide_launcher(&app);
 }
 
+/// The popover started or stopped filling in a snippet's fields (or editing
+/// text before pasting), which reopening the launcher then resumes.
+#[tauri::command]
+pub fn set_pending(state: State<'_, AppState>, active: bool) {
+    state.pending.store(active, Ordering::SeqCst);
+}
+
 #[tauri::command]
 pub fn open_snippets_dir(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let dir = state.snippets_dir();
@@ -472,7 +485,7 @@ pub fn preview_snippet(
         .map(|e| e.body.clone())
         .ok_or(i18n::tr("条目不存在", "Item not found"))?;
     let parts = template::parse(&body);
-    let (clipboard, history) = template_inputs(&state, &parts);
+    let (clipboard, history) = template_inputs(&state, &parts, &values);
     Ok(template::render_segments(
         &parts, &values, &clipboard, &history,
     ))
@@ -507,7 +520,7 @@ pub fn editable_text(
         return Ok(EditableText { text: body, cursor_back: 0 });
     }
     let parts = template::parse(&body);
-    let (clipboard, history) = template_inputs(&state, &parts);
+    let (clipboard, history) = template_inputs(&state, &parts, &values);
     let rendered = template::render(&parts, &values, &clipboard, &history, false);
     Ok(EditableText {
         text: rendered.text,
@@ -530,7 +543,7 @@ pub fn preview_template(
     values: HashMap<String, String>,
 ) -> TemplatePreview {
     let parts = template::parse(&body);
-    let (clipboard, history) = template_inputs(&state, &parts);
+    let (clipboard, history) = template_inputs(&state, &parts, &values);
     TemplatePreview {
         fields: template::fields(&parts),
         segments: template::render_segments(&parts, &values, &clipboard, &history),
@@ -560,6 +573,7 @@ pub fn activate_text(
     } else {
         deliver(&app, text, 0, mode == Mode::Paste);
     }
+    state.pending.store(false, Ordering::SeqCst);
     if let Some(key) = key {
         record_use(&state, &parse_key(&key)?)?;
     }
