@@ -46,6 +46,9 @@ const POPOVER_HEIGHT: f64 = 360.0;
 /// preview widths come from the config (`card_width`, `peek_width`).
 const POPOVER_MARGIN: f64 = 20.0;
 const PANEL_GAP: f64 = 8.0;
+/// How long a snippet's fields left half filled in wait for the launcher to
+/// come back (`AppState::pending`).
+const PENDING_KEEP: Duration = Duration::from_secs(60);
 
 pub struct AppState {
     config: RwLock<Config>,
@@ -62,6 +65,10 @@ pub struct AppState {
     /// When the launcher was last hidden; decides whether the UI keeps its
     /// previous query on the next show.
     hidden_at: Mutex<Option<Instant>>,
+    /// The popover is filling in a snippet's fields or editing text before
+    /// pasting (`set_pending`); cleared once something is pasted. See
+    /// `show_launcher`.
+    pending: AtomicBool,
     /// Where the popover is placed (upper middle of the screen, or the caret).
     anchor: Mutex<Option<Anchor>>,
     /// Caret (or mouse) of the last paste, for the chip.
@@ -91,6 +98,9 @@ pub struct ManageRequest {
 #[serde(rename_all = "camelCase")]
 struct ShownPayload {
     keep_query: bool,
+    /// Pick up the fields being filled in (or the text being edited) where
+    /// they were left.
+    resume_pending: bool,
     anchor: AnchorKind,
     space: Space,
     /// Executable name of the window that pastes will go to.
@@ -124,24 +134,35 @@ fn show_launcher(app: &AppHandle) {
     };
     yank::hide_chip(app);
     let state = app.state::<AppState>();
+    let visible = window.is_visible().unwrap_or(false);
+    let hidden_within = |limit: Duration| {
+        visible
+            || state
+                .hidden_at
+                .lock()
+                .unwrap()
+                .is_some_and(|t| t.elapsed() < limit)
+    };
+
+    // Fields left half filled in were most likely left to go and copy
+    // something for them: the UI picks them up again, and the paste still
+    // goes to the window they were started for, not the one copied from.
+    let resume_pending = state.pending.load(Ordering::SeqCst) && hidden_within(PENDING_KEEP);
+    if !resume_pending {
+        state.pending.store(false, Ordering::SeqCst);
+    }
     let foreground = platform::foreground_window();
-    if !platform::is_own_window(foreground) {
+    let own_foreground = platform::is_own_window(foreground);
+    if !own_foreground && !resume_pending {
         state.prev_window.store(foreground, Ordering::SeqCst);
     }
     let target = state.prev_window.load(Ordering::SeqCst);
 
     // Payload `keepQuery` tells the UI to keep its previous query.
-    let visible = window.is_visible().unwrap_or(false);
-    let keep_query = if visible {
-        true
-    } else {
-        let keep_for = Duration::from_secs(state.config.read().unwrap().keep_query_seconds);
-        state
-            .hidden_at
-            .lock()
-            .unwrap()
-            .is_some_and(|t| t.elapsed() < keep_for)
-    };
+    let keep_query = resume_pending
+        || hidden_within(Duration::from_secs(
+            state.config.read().unwrap().keep_query_seconds,
+        ));
 
     let (follow_caret, auto_peek, english_input, card_width, peek_width) = {
         let config = state.config.read().unwrap();
@@ -157,7 +178,7 @@ fn show_launcher(app: &AppHandle) {
     // launcher; with `follow_caret` it opens at the caret instead. (The
     // post-paste chip always goes to the caret: see `caret_anchor`.)
     let anchor = if follow_caret {
-        find_anchor(&window, (!platform::is_own_window(foreground)).then_some(target))
+        find_anchor(&window, (!own_foreground).then_some(foreground))
     } else {
         // The card and, when it opens by itself, the preview beside it are
         // centered together.
@@ -197,6 +218,7 @@ fn show_launcher(app: &AppHandle) {
         "launcher-shown",
         ShownPayload {
             keep_query,
+            resume_pending,
             anchor: anchor.kind,
             space: anchor.space(),
             target_app: platform::process_name(target),
@@ -611,6 +633,7 @@ pub fn run() {
                 hotkey_error: Mutex::new(None),
                 snippet_watcher: Mutex::new(None),
                 hidden_at: Mutex::new(None),
+                pending: AtomicBool::new(false),
                 anchor: Mutex::new(None),
                 chip_anchor: Mutex::new(None),
                 main_shortcut: Mutex::new(None),
@@ -669,6 +692,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::hide_window,
+            commands::set_pending,
             commands::open_snippets_dir,
             commands::place_popover,
             commands::calc_detail,

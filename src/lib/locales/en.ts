@@ -70,6 +70,7 @@ const en: Messages = {
     backToAll: "Backspace: back to all",
     caretNotFound: "Caret not found",
     nextFormat: "Tab: next format",
+    clipRefHint: "$1 = last copied, $$1 = a literal $1",
     blank: "(blank)",
     confirmDelete: "Press ^D again to delete this snippet file · Esc cancels",
   },

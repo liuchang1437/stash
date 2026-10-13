@@ -79,6 +79,7 @@ const zh = {
     backToAll: "Backspace 回到全部",
     caretNotFound: "未找到光标",
     nextFormat: "Tab 换格式",
+    clipRefHint: "$1 = 最近复制的内容，$$1 = 字面的 $1",
     blank: "（空白）",
     confirmDelete: "再按 ^D 删除这个 snippet 文件 · Esc 取消",
   },

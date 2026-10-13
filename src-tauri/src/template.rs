@@ -8,6 +8,10 @@
 //! - `{{cursor}}` – where the caret ends up after pasting
 //! - `{{name}}`, `{{name=default}}`, `{{name:a|b|c}}` – asked from the user
 //!
+//! In what is filled in for a `{{name}}` (and in its default), `$N` stands
+//! for the N-th most recent clipboard history entry, like `{{clipboard:N}}`;
+//! one more `$` makes it literal (`$$1` → `$1`).
+//!
 //! An unterminated `{{` is kept as literal text.
 
 use std::collections::HashMap;
@@ -125,16 +129,85 @@ pub fn fields(parts: &[Part]) -> Vec<Field> {
     out
 }
 
-/// How many clipboard history entries the template refers to.
-pub fn history_depth(parts: &[Part]) -> usize {
+/// How many clipboard history entries the template refers to, including
+/// `$N` in the values filled in (defaults for the rest).
+pub fn history_depth(parts: &[Part], values: &HashMap<String, String>) -> usize {
     parts
         .iter()
         .filter_map(|p| match p {
             Part::ClipHistory(n) => Some(*n),
+            Part::Input(field) => value_refs(input_value(field, values)).max(),
             _ => None,
         })
         .max()
         .unwrap_or(0)
+}
+
+fn input_value<'a>(field: &'a Field, values: &'a HashMap<String, String>) -> &'a str {
+    values.get(&field.name).unwrap_or(&field.default)
+}
+
+/// A piece of a filled-in value: literal text, or a `$N` reference.
+enum Piece<'a> {
+    Text(&'a str),
+    Ref(usize),
+}
+
+/// Splits `value` at `$N` references (`＄N` too, as in the calculator). A
+/// run of several `$` before the digits is literal text with one `$`
+/// dropped; `$0` and a `$` without digits stay as they are.
+fn pieces(value: &str) -> Vec<Piece<'_>> {
+    let mut out = Vec::new();
+    let mut text_from = 0;
+    let mut i = 0;
+    while i < value.len() {
+        let rest = &value[i..];
+        let dollars: usize = rest
+            .chars()
+            .take_while(|c| matches!(c, '$' | '＄'))
+            .map(char::len_utf8)
+            .sum();
+        if dollars == 0 {
+            i += rest.chars().next().map_or(1, char::len_utf8);
+            continue;
+        }
+        let digits = rest[dollars..].bytes().take_while(u8::is_ascii_digit).count();
+        let n: usize = rest[dollars..dollars + digits].parse().unwrap_or(0);
+        if n > 0 {
+            let first = rest.chars().next().map_or(1, char::len_utf8);
+            out.push(Piece::Text(&value[text_from..i]));
+            if dollars > first {
+                // `$$1`: drop the escaping `$` and keep the rest as text.
+                text_from = i + first;
+            } else {
+                out.push(Piece::Ref(n));
+                text_from = i + dollars + digits;
+            }
+        }
+        i += dollars + digits;
+    }
+    out.push(Piece::Text(&value[text_from..]));
+    out.retain(|p| !matches!(p, Piece::Text("")));
+    out
+}
+
+fn value_refs(value: &str) -> impl Iterator<Item = usize> + '_ {
+    pieces(value).into_iter().filter_map(|p| match p {
+        Piece::Ref(n) => Some(n),
+        Piece::Text(_) => None,
+    })
+}
+
+/// A filled-in value with its `$N` references replaced by clipboard history
+/// entries (empty beyond the end of `history`).
+fn expand_refs(value: &str, history: &[String]) -> String {
+    pieces(value)
+        .into_iter()
+        .map(|p| match p {
+            Piece::Text(t) => t,
+            Piece::Ref(n) => history.get(n - 1).map_or("", String::as_str),
+        })
+        .collect()
 }
 
 /// Rendered text and how many characters the caret must move left after
@@ -144,8 +217,8 @@ pub struct Rendered {
     pub cursor_back: usize,
 }
 
-/// `history` holds clipboard history texts, newest first; entries beyond its
-/// end render as empty text.
+/// `history` holds clipboard history texts, newest first (`history_depth` of
+/// them, or all there are); entries beyond its end render as empty text.
 ///
 /// With `url_encode`, variable values that land inside a URL (after a
 /// `scheme://`) are percent-encoded, so `https://x.com/s?q={{q}}` works with
@@ -182,8 +255,7 @@ pub fn render(
                 }
             }
             Part::Input(field) => {
-                let value = values.get(&field.name).unwrap_or(&field.default);
-                push_value(&mut text, value);
+                push_value(&mut text, &expand_refs(input_value(field, values), history));
             }
         }
     }
@@ -245,10 +317,11 @@ pub fn render_segments(
             ),
             Part::Uuid => push(String::new(), SegmentKind::Auto, auto("uuid")),
             Part::Cursor => push(String::new(), SegmentKind::Cursor, None),
-            Part::Input(field) => {
-                let value = values.get(&field.name).unwrap_or(&field.default);
-                push(value.clone(), SegmentKind::Input, Some(field.name.clone()));
-            }
+            Part::Input(field) => push(
+                expand_refs(input_value(field, values), history),
+                SegmentKind::Input,
+                Some(field.name.clone()),
+            ),
         }
     }
     out
@@ -350,10 +423,39 @@ mod tests {
     #[test]
     fn renders_clipboard_history() {
         let parts = parse("{{clipboard:3}}-{{clipboard:2}}-{{clipboard:1}}-{{clipboard:9}}|{{clipboard}}");
-        assert_eq!(history_depth(&parts), 9);
+        assert_eq!(history_depth(&parts, &HashMap::new()), 9);
         let history = ["C", "B", "A"].map(String::from);
         let r = render(&parts, &HashMap::new(), "now", &history, false);
         assert_eq!(r.text, "A-B-C-|now");
+    }
+
+    #[test]
+    fn expands_clip_refs_in_values() {
+        let history = ["new", "old"].map(String::from);
+        let expand = |v: &str| expand_refs(v, &history);
+        assert_eq!(expand("$1/$2/$3"), "new/old/");
+        assert_eq!(expand("a$1b ＄2"), "anewb old");
+        assert_eq!(expand("$$1 and $$$2 and ＄＄1"), "$1 and $$2 and ＄1");
+        assert_eq!(expand("$ $0 $$ $x 100$"), "$ $0 $$ $x 100$");
+        assert_eq!(expand("中文$1中文"), "中文new中文");
+
+        let parts = parse("{{a}}-{{b=$2}}-{{c=$$9}}");
+        let mut values = HashMap::new();
+        values.insert("a".to_string(), "$1".to_string());
+        assert_eq!(history_depth(&parts, &values), 2);
+        assert_eq!(render(&parts, &values, "", &history, false).text, "new-old-$9");
+        values.insert("c".to_string(), "$5".to_string());
+        assert_eq!(history_depth(&parts, &values), 5);
+
+        let segs = render_segments(&parts, &values, "", &history);
+        assert_eq!(segs[0].text, "new");
+        assert_eq!(segs[0].kind, SegmentKind::Input);
+
+        // The clip lands inside a URL, so it is encoded like typed text.
+        let url = parse("https://x.com/s?q={{q}}");
+        values.insert("q".to_string(), "$1 & $2".to_string());
+        let r = render(&url, &values, "", &["a b".to_string(), "c".to_string()], true);
+        assert_eq!(r.text, "https://x.com/s?q=a%20b%20%26%20c");
     }
 
     fn shape(segs: &[Segment]) -> Vec<(&str, SegmentKind, Option<&str>)> {
