@@ -24,7 +24,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { t } from "./i18n.svelte";
-import { escapeSnippet, tokens, variables, type TokenKind, type Variable } from "./template";
+import { escapeSnippet, FILTERS, isChoice, tokens, variables, type TokenKind, type Variable } from "./template";
 
 export type EditorOptions = {
   doc: string;
@@ -111,9 +111,11 @@ function lintVariables(view: EditorView): Diagnostic[] {
 }
 
 // ---------------------------------------------------------------------------
-// `{{` completion
+// `{{` and `|` completion
 
 function completeVariables(ctx: CompletionContext): CompletionResult | null {
+  const op = completeFilters(ctx);
+  if (op) return op;
   const typed = ctx.matchBefore(/\{\{[^{}]*/);
   // Editing inside an existing `{{…}}` is left alone.
   const inside = /^[^{}\n]*\}\}/.test(ctx.state.sliceDoc(ctx.pos, ctx.pos + 200));
@@ -121,6 +123,20 @@ function completeVariables(ctx: CompletionContext): CompletionResult | null {
   // Ctrl+Space anywhere.
   if (ctx.explicit) return { from: ctx.pos, options: completions() };
   return null;
+}
+
+/** After a `|` inside a `{{…`, the operations (but not between choices). */
+function completeFilters(ctx: CompletionContext): CompletionResult | null {
+  const typed = ctx.matchBefore(/\{\{[^{}\n]*\|\s*[a-z]*/i);
+  if (!typed) return null;
+  const inner = typed.text.slice(2);
+  if (isChoice(inner.slice(0, inner.lastIndexOf("|")))) return null;
+  const word = /[a-z]*$/i.exec(typed.text)![0];
+  return {
+    from: ctx.pos - word.length,
+    options: FILTERS.map((name) => ({ label: name, detail: t.template.filters[name] })),
+    validFor: /^[a-z]*$/i,
+  };
 }
 
 function completions(): Completion[] {
