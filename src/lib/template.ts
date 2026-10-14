@@ -14,6 +14,37 @@ export type Token = { from: number; to: number; kind: TokenKind; name: string; p
 
 const AUTO = new Set(["date", "time", "datetime", "clipboard", "uuid"]);
 
+/** Operations a value can go through, `{{clipboard | trim}}` (`template::Filter`). */
+export const FILTERS = ["trim", "upper", "lower", "oneline", "url"] as const;
+export type FilterName = (typeof FILTERS)[number];
+const isFilter = (s: string): s is FilterName => (FILTERS as readonly string[]).includes(s);
+
+/** The name, the separator (`:`, `=` or empty) and the rest, trimmed. */
+function splitHead(inner: string) {
+  const at = inner.search(/[:=]/);
+  if (at < 0) return { name: inner, sep: "", arg: "" };
+  return { name: inner.slice(0, at).trim(), sep: inner[at], arg: inner.slice(at + 1).trim() };
+}
+
+/** Whether the inside of a `{{…}}` is a choice, where `|` separates options rather than operations. */
+export function isChoice(inner: string): boolean {
+  const { name, sep } = splitHead(inner.trim());
+  return sep === ":" && !AUTO.has(name) && name !== "cursor";
+}
+
+/** Splits the trailing `| op`s with known operation names off `inner`. */
+function splitFilters(inner: string): { rest: string; filters: FilterName[] } {
+  const filters: FilterName[] = [];
+  let rest = inner;
+  for (let bar = rest.lastIndexOf("|"); bar >= 0; bar = rest.lastIndexOf("|")) {
+    const op = rest.slice(bar + 1).trim();
+    if (!isFilter(op)) break;
+    filters.unshift(op);
+    rest = rest.slice(0, bar).trimEnd();
+  }
+  return { rest, filters };
+}
+
 /** Finds the variables in `src` the way `template::parse` does. */
 export function tokens(src: string): Token[] {
   const out: Token[] = [];
@@ -33,12 +64,13 @@ export function tokens(src: string): Token[] {
 }
 
 function classify(raw: string): Omit<Token, "from" | "to"> {
-  const inner = raw.trim();
-  const at = inner.search(/[:=]/);
-  const name = (at < 0 ? inner : inner.slice(0, at)).trim();
-  const sep = at < 0 ? "" : inner[at];
-  const arg = at < 0 ? "" : inner.slice(at + 1).trim();
+  const inner = isChoice(raw) ? raw.trim() : splitFilters(raw.trim()).rest;
+  const { name, sep, arg } = splitHead(inner);
   if (!name) return { kind: "invalid", name, problem: t.template.missingName };
+  if (name.includes("|")) {
+    const op = name.slice(name.lastIndexOf("|") + 1).trim();
+    return { kind: "invalid", name, problem: t.template.badFilter(op) };
+  }
   if (/\s/.test(name)) return { kind: "invalid", name, problem: t.template.spaceInName };
   // Rust's usize parsing also takes a leading `+`.
   if (name === "clipboard" && sep === ":" && !(/^\+?\d+$/.test(arg) && Number(arg) > 0)) {

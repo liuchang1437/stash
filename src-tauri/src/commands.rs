@@ -57,7 +57,7 @@ fn render_snippets(index: &Index, hits: &mut [Hit]) {
         if parts.iter().all(|p| matches!(p, Part::Text(_))) {
             continue;
         }
-        let current = if parts.contains(&Part::Clipboard) {
+        let current = if template::uses_clipboard(&parts) {
             clipboard.get_or_insert_with(|| platform::read_clipboard_text().unwrap_or_default())
         } else {
             ""
@@ -156,7 +156,7 @@ fn template_inputs(
     parts: &[Part],
     values: &HashMap<String, String>,
 ) -> (String, Vec<String>) {
-    let clipboard = if parts.contains(&Part::Clipboard) {
+    let clipboard = if template::uses_clipboard(parts) {
         platform::read_clipboard_text().unwrap_or_default()
     } else {
         String::new()

@@ -174,6 +174,7 @@ const en: Messages = {
     bodyPlaceholder: "Content. Type {{ to insert a variable",
     typeBraces: "<code>{{</code> inserts a variable",
     selectAndCtrlK: "<kbd>Ctrl K</kbd> turns a selection into one",
+    pipeFilters: "<code>| trim</code> and the like after a name transform the value",
     problems: (n) => `${plural(n, "malformed variable", "malformed variables")}, pasted as written`,
     result: "Pasted result",
     newSnippet: "New snippet",
@@ -187,6 +188,17 @@ const en: Messages = {
     missingName: "Missing variable name, pasted as written",
     spaceInName: "Variable names can't contain spaces, pasted as written",
     badClipboardIndex: "clipboard: needs a positive whole number; 1 is the latest",
+    badFilter: (op) =>
+      op
+        ? `There is no operation "${op}", pasted as written. Available: trim upper lower oneline url`
+        : "Missing operation name after |, pasted as written",
+    filters: {
+      trim: "Strip leading and trailing spaces and line breaks",
+      upper: "Convert to uppercase",
+      lower: "Convert to lowercase",
+      oneline: "Join into one line: line breaks become spaces, blank lines are dropped",
+      url: "URL-encode",
+    },
     fill: (name) => `Fill in: ${name}`,
     cursor: "The caret ends up here after pasting",
     date: "Current time, taken when pasting",

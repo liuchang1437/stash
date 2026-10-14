@@ -184,6 +184,7 @@ const zh = {
     // These contain markup and are rendered with {@html}.
     typeBraces: "输入 <code>{{</code> 插入变量",
     selectAndCtrlK: "选中文字后 <kbd>Ctrl K</kbd> 把它变成变量",
+    pipeFilters: "变量名后加 <code>| trim</code> 等处理取值",
     problems: (n: number) => `${n} 处变量写法有误，会按原文粘贴`,
     result: "粘贴结果",
     newSnippet: "新建 Snippet",
@@ -197,6 +198,18 @@ const zh = {
     missingName: "缺少变量名，会按原文粘贴",
     spaceInName: "变量名不能有空格，会按原文粘贴",
     badClipboardIndex: "clipboard: 后面要写正整数，1 是最近一条",
+    badFilter: (op: string) =>
+      op
+        ? `没有「${op}」这个操作，会按原文粘贴。可用 trim upper lower oneline url`
+        : "| 后面缺少操作名，会按原文粘贴",
+    /** What each `| op` does, shown when completing it. */
+    filters: {
+      trim: "去掉首尾的空格和换行",
+      upper: "转成大写",
+      lower: "转成小写",
+      oneline: "合并成一行：换行变成空格，空行去掉",
+      url: "URL 编码",
+    },
     fill: (name: string) => `填写：${name}`,
     cursor: "粘贴后光标停在这里",
     date: "当前时间，粘贴时取值",

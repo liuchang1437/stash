@@ -110,6 +110,19 @@ Next week: {{plan}}
 | `{{uuid}}` | A random UUID |
 | `{{cursor}}` | Where the caret ends up after pasting |
 
+Add `| operation` after a variable to transform its value; several run left to right. For example `{{clipboard | trim}}`, `{{clipboard:2 | trim | lower}}`, `{{name=default | upper}}`:
+
+| Operation | Effect |
+|---|---|
+| `trim` | Strips leading and trailing spaces and line breaks |
+| `upper` / `lower` | Converts to uppercase / lowercase |
+| `oneline` | Joins into one line: each line is trimmed and joined with a single space, blank lines are dropped |
+| `url` | URL-encodes; the value is then not encoded a second time when opening in the browser |
+
+- On a fill-in variable, operations apply to the final value (after `$N` has been replaced with the clipboard entry). The input box shows what you typed; the preview and the pasted text show the result. A variable used several times is still filled in once, and each occurrence can have its own operations, such as `{{name}}` and `{{name | upper}}`.
+- Choices (`{{env:prod|dev}}`) take no operations; every `|` there separates options.
+- A `|` that isn't followed by one of these names is part of the default, so `{{x=a|b}}` still defaults to `a|b`.
+
 ### Editing snippets
 
 Press `Ctrl N` in the popover to create a snippet and `Ctrl E` to edit one. You don't need to remember the syntax above:

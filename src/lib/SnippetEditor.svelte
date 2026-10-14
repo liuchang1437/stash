@@ -156,6 +156,7 @@
       <div class="hint">
         <span>{@html t.editor.typeBraces}</span>
         <span>{@html t.editor.selectAndCtrlK}</span>
+        <span>{@html t.editor.pipeFilters}</span>
         <span class="spacer"></span>
         {#if problems}<span class="warn">{t.editor.problems(problems)}</span>{/if}
       </div>

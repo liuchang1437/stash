@@ -12,6 +12,12 @@
 //! for the N-th most recent clipboard history entry, like `{{clipboard:N}}`;
 //! one more `$` makes it literal (`$$1` → `$1`).
 //!
+//! A value can be passed through operations, applied left to right:
+//! `{{clipboard | trim | lower}}`, `{{name=x | upper}}` (see `Filter`). Only
+//! a trailing `| op` with a known operation name counts, so `{{x=a|b}}` keeps
+//! `a|b` as its default; choices (`{{name:a|b}}`) take none, since there `|`
+//! separates the options.
+//!
 //! An unterminated `{{` is kept as literal text.
 
 use std::collections::HashMap;
@@ -21,13 +27,64 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Part {
     Text(String),
+    Cursor,
+    /// A value worked out when rendering, then passed through the filters.
+    Value(Source, Vec<Filter>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Source {
     Date(String),
     Clipboard,
     /// 1-based position in the clipboard history, newest first.
     ClipHistory(usize),
     Uuid,
-    Cursor,
     Input(Field),
+}
+
+/// An operation on a variable's value, written `{{var | name}}`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Filter {
+    /// Strips leading and trailing whitespace, line breaks included.
+    Trim,
+    Upper,
+    Lower,
+    /// Joins the lines with single spaces, each trimmed, blank ones dropped.
+    Oneline,
+    /// Percent-encodes; in open mode the value is then not encoded again.
+    Url,
+}
+
+impl Filter {
+    fn from_name(name: &str) -> Option<Filter> {
+        Some(match name {
+            "trim" => Filter::Trim,
+            "upper" => Filter::Upper,
+            "lower" => Filter::Lower,
+            "oneline" => Filter::Oneline,
+            "url" => Filter::Url,
+            _ => return None,
+        })
+    }
+
+    fn apply(self, value: &str) -> String {
+        match self {
+            Filter::Trim => value.trim().to_string(),
+            Filter::Upper => value.to_uppercase(),
+            Filter::Lower => value.to_lowercase(),
+            Filter::Oneline => value
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join(" "),
+            Filter::Url => percent_encode(value),
+        }
+    }
+}
+
+fn apply_filters(value: String, filters: &[Filter]) -> String {
+    filters.iter().fold(value, |v, f| f.apply(&v))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -69,14 +126,38 @@ pub fn parse(src: &str) -> Vec<Part> {
     parts
 }
 
-fn parse_var(inner: &str) -> Option<Part> {
-    let inner = inner.trim();
-    let split = inner.find([':', '=']);
-    let (name, sep, arg) = match split {
+const BUILTINS: [&str; 6] = ["date", "time", "datetime", "clipboard", "uuid", "cursor"];
+
+/// The name, the separator (`:`, `=` or empty) and the rest, trimmed.
+fn split_head(inner: &str) -> (&str, &str, &str) {
+    match inner.find([':', '=']) {
         Some(i) => (inner[..i].trim(), &inner[i..i + 1], inner[i + 1..].trim()),
         None => (inner, "", ""),
-    };
-    if name.is_empty() || name.contains(char::is_whitespace) {
+    }
+}
+
+/// Splits the trailing `| op`s with known operation names off `inner`.
+fn split_filters(inner: &str) -> (&str, Vec<Filter>) {
+    let mut rest = inner;
+    let mut filters = Vec::new();
+    while let Some(bar) = rest.rfind('|') {
+        let Some(filter) = Filter::from_name(rest[bar + 1..].trim()) else {
+            break;
+        };
+        filters.push(filter);
+        rest = rest[..bar].trim_end();
+    }
+    filters.reverse();
+    (rest, filters)
+}
+
+fn parse_var(inner: &str) -> Option<Part> {
+    let inner = inner.trim();
+    let (head, sep, _) = split_head(inner);
+    let choice = sep == ":" && !BUILTINS.contains(&head);
+    let (inner, filters) = if choice { (inner, Vec::new()) } else { split_filters(inner) };
+    let (name, sep, arg) = split_head(inner);
+    if name.is_empty() || name.contains(char::is_whitespace) || name.contains('|') {
         return None;
     }
     let fmt = |default: &str| {
@@ -86,14 +167,14 @@ fn parse_var(inner: &str) -> Option<Part> {
             default.to_string()
         }
     };
-    Some(match name {
-        "date" => Part::Date(fmt("yyyy-MM-dd")),
-        "time" => Part::Date(fmt("HH:mm")),
-        "datetime" => Part::Date(fmt("yyyy-MM-dd HH:mm")),
-        "clipboard" if sep == ":" => Part::ClipHistory(arg.parse().ok().filter(|n| *n > 0)?),
-        "clipboard" => Part::Clipboard,
-        "uuid" => Part::Uuid,
-        "cursor" => Part::Cursor,
+    let source = match name {
+        "date" => Source::Date(fmt("yyyy-MM-dd")),
+        "time" => Source::Date(fmt("HH:mm")),
+        "datetime" => Source::Date(fmt("yyyy-MM-dd HH:mm")),
+        "clipboard" if sep == ":" => Source::ClipHistory(arg.parse().ok().filter(|n| *n > 0)?),
+        "clipboard" => Source::Clipboard,
+        "uuid" => Source::Uuid,
+        "cursor" => return Some(Part::Cursor),
         _ => {
             let (default, options) = match sep {
                 "=" => (arg.to_string(), Vec::new()),
@@ -107,20 +188,26 @@ fn parse_var(inner: &str) -> Option<Part> {
                 }
                 _ => (String::new(), Vec::new()),
             };
-            Part::Input(Field {
+            Source::Input(Field {
                 name: name.to_string(),
                 default,
                 options,
             })
         }
-    })
+    };
+    Some(Part::Value(source, filters))
+}
+
+/// Whether rendering needs the current clipboard text.
+pub fn uses_clipboard(parts: &[Part]) -> bool {
+    parts.iter().any(|p| matches!(p, Part::Value(Source::Clipboard, _)))
 }
 
 /// Fields the user has to fill in, deduplicated by name (first one wins).
 pub fn fields(parts: &[Part]) -> Vec<Field> {
     let mut out: Vec<Field> = Vec::new();
     for part in parts {
-        if let Part::Input(field) = part {
+        if let Part::Value(Source::Input(field), _) = part {
             if !out.iter().any(|f| f.name == field.name) {
                 out.push(field.clone());
             }
@@ -135,8 +222,8 @@ pub fn history_depth(parts: &[Part], values: &HashMap<String, String>) -> usize 
     parts
         .iter()
         .filter_map(|p| match p {
-            Part::ClipHistory(n) => Some(*n),
-            Part::Input(field) => value_refs(input_value(field, values)).max(),
+            Part::Value(Source::ClipHistory(n), _) => Some(*n),
+            Part::Value(Source::Input(field), _) => value_refs(input_value(field, values)).max(),
             _ => None,
         })
         .max()
@@ -222,7 +309,8 @@ pub struct Rendered {
 ///
 /// With `url_encode`, variable values that land inside a URL (after a
 /// `scheme://`) are percent-encoded, so `https://x.com/s?q={{q}}` works with
-/// any input. A value that *is* the whole URL (`{{url}}`) stays untouched.
+/// any input. A value that *is* the whole URL (`{{url}}`) stays untouched,
+/// and so does one already encoded with `| url`.
 pub fn render(
     parts: &[Part],
     values: &HashMap<String, String>,
@@ -233,29 +321,25 @@ pub fn render(
     let now = chrono::Local::now();
     let mut text = String::new();
     let mut cursor_at = None;
-    let push_value = |text: &mut String, value: &str| {
-        if url_encode && text.contains("://") {
-            text.push_str(&percent_encode(value));
-        } else {
-            text.push_str(value);
-        }
-    };
     for part in parts {
         match part {
             Part::Text(t) => text.push_str(t),
-            Part::Date(f) => push_value(&mut text, &now.format(&to_strftime(f)).to_string()),
-            Part::Clipboard => push_value(&mut text, clipboard),
-            Part::ClipHistory(n) => {
-                push_value(&mut text, history.get(n - 1).map_or("", String::as_str))
-            }
-            Part::Uuid => text.push_str(&uuid::Uuid::new_v4().to_string()),
             Part::Cursor => {
                 if cursor_at.is_none() {
                     cursor_at = Some(text.len());
                 }
             }
-            Part::Input(field) => {
-                push_value(&mut text, &expand_refs(input_value(field, values), history));
+            Part::Value(source, filters) => {
+                let raw = match source {
+                    Source::Uuid => uuid::Uuid::new_v4().to_string(),
+                    _ => source_text(source, values, clipboard, history, &now),
+                };
+                let value = apply_filters(raw, filters);
+                if url_encode && !filters.contains(&Filter::Url) && text.contains("://") {
+                    text.push_str(&percent_encode(&value));
+                } else {
+                    text.push_str(&value);
+                }
             }
         }
     }
@@ -263,6 +347,24 @@ pub fn render(
         .map(|at| text[at..].replace("\r\n", "\n").chars().count())
         .unwrap_or(0);
     Rendered { text, cursor_back }
+}
+
+/// What `source` stands for, before its filters. A UUID is empty here; only
+/// `render` makes one.
+fn source_text(
+    source: &Source,
+    values: &HashMap<String, String>,
+    clipboard: &str,
+    history: &[String],
+    now: &chrono::DateTime<chrono::Local>,
+) -> String {
+    match source {
+        Source::Date(f) => now.format(&to_strftime(f)).to_string(),
+        Source::Clipboard => clipboard.to_string(),
+        Source::ClipHistory(n) => history.get(n - 1).cloned().unwrap_or_default(),
+        Source::Uuid => String::new(),
+        Source::Input(field) => expand_refs(input_value(field, values), history),
+    }
 }
 
 /// Where a piece of rendered text comes from.
@@ -288,9 +390,9 @@ pub struct Segment {
     pub name: Option<String>,
 }
 
-/// Like `render` (without URL encoding), but keeps variable values apart
-/// from the surrounding text for a live preview. A UUID is left empty: the
-/// real one is only made when pasting, so any value shown here would be
+/// Like `render` (without automatic URL encoding), but keeps variable values
+/// apart from the surrounding text for a live preview. A UUID is left empty:
+/// the real one is only made when pasting, so any value shown here would be
 /// wrong.
 pub fn render_segments(
     parts: &[Part],
@@ -304,24 +406,21 @@ pub fn render_segments(
         Some(last) if kind == SegmentKind::Text && last.kind == SegmentKind::Text => last.text.push_str(&text),
         _ => out.push(Segment { text, kind, name }),
     };
-    let auto = |name: &str| Some(name.to_string());
     for part in parts {
         match part {
             Part::Text(t) => push(t.clone(), SegmentKind::Text, None),
-            Part::Date(f) => push(now.format(&to_strftime(f)).to_string(), SegmentKind::Auto, auto("date")),
-            Part::Clipboard => push(clipboard.to_string(), SegmentKind::Auto, auto("clipboard")),
-            Part::ClipHistory(n) => push(
-                history.get(n - 1).cloned().unwrap_or_default(),
-                SegmentKind::Auto,
-                Some(format!("clipboard:{n}")),
-            ),
-            Part::Uuid => push(String::new(), SegmentKind::Auto, auto("uuid")),
             Part::Cursor => push(String::new(), SegmentKind::Cursor, None),
-            Part::Input(field) => push(
-                expand_refs(input_value(field, values), history),
-                SegmentKind::Input,
-                Some(field.name.clone()),
-            ),
+            Part::Value(source, filters) => {
+                let (kind, name) = match source {
+                    Source::Input(field) => (SegmentKind::Input, field.name.clone()),
+                    Source::Date(_) => (SegmentKind::Auto, "date".to_string()),
+                    Source::Clipboard => (SegmentKind::Auto, "clipboard".to_string()),
+                    Source::ClipHistory(n) => (SegmentKind::Auto, format!("clipboard:{n}")),
+                    Source::Uuid => (SegmentKind::Auto, "uuid".to_string()),
+                };
+                let raw = source_text(source, values, clipboard, history, &now);
+                push(apply_filters(raw, filters), kind, Some(name));
+            }
         }
     }
     out
@@ -503,6 +602,66 @@ mod tests {
                 (year.as_str(), Auto, Some("date")),
             ]
         );
+    }
+
+    #[test]
+    fn parses_filters() {
+        use Filter::*;
+        let filters = |src: &str| match parse(src).as_slice() {
+            [Part::Value(_, f)] => f.clone(),
+            other => panic!("{src}: {other:?}"),
+        };
+        assert_eq!(filters("{{clipboard | trim}}"), [Trim]);
+        assert_eq!(filters("{{clipboard:2|trim|upper}}"), [Trim, Upper]);
+        assert_eq!(filters("{{date:HH:mm | lower }}"), [Lower]);
+        assert_eq!(filters("{{q | oneline | url}}"), [Oneline, Url]);
+        assert_eq!(filters("{{uuid|upper}}"), [Upper]);
+
+        // A default keeps a `|` that isn't followed by an operation.
+        let parts = parse("{{x=a|b}}{{y=a | b | trim}}");
+        let f = fields(&parts);
+        assert_eq!((f[0].default.as_str(), f[1].default.as_str()), ("a|b", "a | b"));
+
+        // In choices `|` separates the options, even ones named like operations.
+        let parts = parse("{{case:upper|lower}}");
+        assert_eq!(fields(&parts)[0].options, ["upper", "lower"]);
+        assert_eq!(filters("{{case:upper|lower}}"), []);
+
+        // An unknown operation leaves the whole thing literal.
+        let r = render(&parse("{{clipboard | nope}}{{a|b}}"), &HashMap::new(), "x", &[], false);
+        assert_eq!(r.text, "{{clipboard | nope}}{{a|b}}");
+        assert!(matches!(parse("{{cursor | trim}}").as_slice(), [Part::Cursor]));
+    }
+
+    #[test]
+    fn applies_filters() {
+        let history = ["  last\n".to_string()];
+        let mut values = HashMap::new();
+        values.insert("q".to_string(), " line one\n\n  line two \r\n".to_string());
+        values.insert("ref".to_string(), "$1".to_string());
+        let render_str = |src: &str| render(&parse(src), &values, "\t Clip Board \n", &history, false).text;
+        assert_eq!(render_str("[{{clipboard | trim}}]"), "[Clip Board]");
+        assert_eq!(render_str("[{{clipboard | trim | upper}}]"), "[CLIP BOARD]");
+        assert_eq!(render_str("[{{clipboard|lower|trim}}]"), "[clip board]");
+        assert_eq!(render_str("[{{q | oneline}}]"), "[line one line two]");
+        assert_eq!(render_str("[{{ref | trim}}][{{clipboard:1|trim}}]"), "[last][last]");
+        assert_eq!(render_str("[{{q}}]"), "[ line one\n\n  line two \r\n]");
+        assert_eq!(render_str("{{q|trim|url}}"), "line%20one%0A%0A%20%20line%20two");
+        let id = render_str("{{uuid | upper}}");
+        assert_eq!(id, id.to_uppercase());
+        assert_eq!(id.len(), 36);
+
+        // `| url` is not encoded a second time when opening.
+        values.insert("s".to_string(), "a b".to_string());
+        let open = |src: &str| render(&parse(src), &values, "", &[], true).text;
+        assert_eq!(open("https://x/?q={{s | url}}"), "https://x/?q=a%20b");
+        assert_eq!(open("https://x/?q={{s | upper}}"), "https://x/?q=A%20B");
+
+        // Same field, an operation per occurrence; the preview shows the result.
+        let parts = parse("{{s}}/{{s | upper}}");
+        assert_eq!(fields(&parts).len(), 1);
+        let segs = render_segments(&parts, &values, "", &[]);
+        assert_eq!(shape(&segs)[2], ("A B", SegmentKind::Input, Some("s")));
     }
 
     #[test]
