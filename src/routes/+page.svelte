@@ -2,12 +2,11 @@
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
   import { api } from "$lib/api";
-  import Chip from "$lib/Chip.svelte";
   import { setLang, type Lang } from "$lib/i18n.svelte";
   import Manage from "$lib/Manage.svelte";
   import Popover from "$lib/Popover.svelte";
 
-  // All three windows load this page; the window label picks the UI.
+  // Both windows load this page; the window label picks the UI.
   const webview = getCurrentWebviewWindow();
   const label = webview.label;
   document.documentElement.dataset.window = label;
@@ -31,8 +30,6 @@
 
 {#if !ready}
   <!-- waiting for the language -->
-{:else if label === "chip"}
-  <Chip />
 {:else if label === "manage"}
   <Manage />
 {:else}

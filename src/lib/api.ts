@@ -63,7 +63,6 @@ export type Config = {
   followCaret: boolean;
   autoPeek: boolean;
   englishInput: boolean;
-  swapHotkey: string;
   /** `zh`, `en`, or empty to follow the Windows display language. */
   language: "" | Lang;
   /** Popover list and preview widths, CSS px. */
@@ -119,16 +118,6 @@ export type EditableText = { text: string; cursorBack: number };
 
 export type ManageRequest = { view: "settings" | "edit"; key: string | null; body: string | null };
 
-/** Payload of the post-paste chip. */
-export type ChipState = {
-  phase: "pasted" | "choosing" | "replaced";
-  index: number;
-  total: number;
-  preview: string;
-  canSwap: boolean;
-  hotkey: string;
-};
-
 export const api = {
   search: (query: string, filter: Filter) => invoke<Hit[]>("search", { query, filter }),
   snippetTags: () => invoke<TagCount[]>("snippet_tags"),
@@ -160,8 +149,6 @@ export const api = {
     invoke<void>("open_manage", { view, key: key ?? null, body: body ?? null }),
   manageRequest: () => invoke<ManageRequest | null>("manage_request"),
   closeManage: () => invoke<void>("close_manage"),
-  chipSwap: () => invoke<void>("chip_swap"),
-  chipUndo: () => invoke<void>("chip_undo"),
   language: () => invoke<Lang>("language"),
 };
 

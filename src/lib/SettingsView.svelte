@@ -9,8 +9,8 @@
   let settings = $state<Settings | null>(null);
   let ignoredApps = $state("");
   let error = $state("");
-  /** Which hotkey field is waiting for a key combination. */
-  let recording = $state<"hotkey" | "swapHotkey" | null>(null);
+  /** The hotkey field is waiting for a key combination. */
+  let recording = $state(false);
 
   onMount(async () => {
     settings = await api.getSettings();
@@ -46,16 +46,12 @@
     return named[code] ?? null;
   }
 
-  function recordHotkey(e: KeyboardEvent, which: "hotkey" | "swapHotkey") {
+  function recordHotkey(e: KeyboardEvent) {
     if (e.key === "Tab") return;
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") {
       (e.target as HTMLElement).blur();
-      return;
-    }
-    if (which === "swapHotkey" && (e.key === "Backspace" || e.key === "Delete") && settings) {
-      settings.config.swapHotkey = "";
       return;
     }
     if (MODIFIERS.includes(e.key) || !settings) return;
@@ -71,7 +67,7 @@
       return;
     }
     error = "";
-    settings.config[which] = [...parts, key].join("+");
+    settings.config.hotkey = [...parts, key].join("+");
   }
 
   async function save() {
@@ -129,12 +125,12 @@
         <span>{t.settings.hotkey}</span>
         <input
           class="field hotkey"
-          class:recording={recording === "hotkey"}
+          class:recording
           readonly
-          value={recording === "hotkey" ? t.settings.pressKeys : settings.config.hotkey}
-          onfocus={() => (recording = "hotkey")}
-          onblur={() => (recording = null)}
-          onkeydown={(e) => recordHotkey(e, "hotkey")}
+          value={recording ? t.settings.pressKeys : settings.config.hotkey}
+          onfocus={() => (recording = true)}
+          onblur={() => (recording = false)}
+          onkeydown={recordHotkey}
         />
         <small>{t.settings.hotkeyHint}</small>
       </label>
@@ -168,20 +164,6 @@
       <label class="check">
         <input type="checkbox" bind:checked={settings.config.englishInput} />
         <span>{t.settings.englishInput}</span>
-      </label>
-
-      <label>
-        <span>{t.settings.swapHotkey}</span>
-        <input
-          class="field hotkey"
-          class:recording={recording === "swapHotkey"}
-          readonly
-          value={recording === "swapHotkey" ? t.settings.pressKeys : settings.config.swapHotkey || t.settings.off}
-          onfocus={() => (recording = "swapHotkey")}
-          onblur={() => (recording = null)}
-          onkeydown={(e) => recordHotkey(e, "swapHotkey")}
-        />
-        <small>{t.settings.swapHint}</small>
       </label>
 
       <label>
