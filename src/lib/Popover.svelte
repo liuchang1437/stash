@@ -699,7 +699,10 @@
       // The input is disabled while filling; focus it once re-enabled.
       tick().then(() => input.focus());
     } else if (e.key === "Enter") {
-      submitFill(e.shiftKey ? "copy" : undefined);
+      // Ctrl+↵ opens no matter which key started the fill, like in the list.
+      if (!(e.ctrlKey || e.metaKey)) submitFill(e.shiftKey ? "copy" : undefined);
+      else if (fill.mode === "open" || opensAsUrl(hits.find((h) => h.key === fill!.key)?.preview ?? "")) submitFill("open");
+      else flash(t.popover.notUrl);
     } else if (e.key === "Tab") {
       const i = fill.fields.findIndex((f) => f.name === fill!.focus);
       const n = fill.fields.length;

@@ -136,7 +136,7 @@ Press `Ctrl N` in the popover to create a snippet and `Ctrl E` to edit one. You 
 
 ### URL snippets (quick search)
 
-A snippet whose content is a URL can be opened in the browser with `Ctrl ↵`. Variables are filled in in the popover first, as usual:
+A snippet whose content is a URL can be opened in the browser with `Ctrl ↵`. Variables are filled in in the popover first, as usual; while filling them in, `Ctrl ↵` opens and `↵` pastes, whichever key started it:
 
 ```markdown
 ---
