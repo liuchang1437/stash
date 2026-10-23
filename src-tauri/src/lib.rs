@@ -10,10 +10,9 @@ mod platform;
 mod search;
 mod snippets;
 mod template;
-mod yank;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Mutex, RwLock};
 use std::thread;
@@ -35,8 +34,6 @@ use search::{Entry, Index, ItemRef};
 
 /// The popover that opens at the caret.
 const MAIN_WINDOW: &str = "main";
-/// Non-activating strip shown under the caret after a paste.
-pub(crate) const CHIP_WINDOW: &str = "chip";
 /// Regular window for settings and the snippet editor.
 pub(crate) const MANAGE_WINDOW: &str = "manage";
 
@@ -71,14 +68,7 @@ pub struct AppState {
     pending: AtomicBool,
     /// Where the popover is placed (upper middle of the screen, or the caret).
     anchor: Mutex<Option<Anchor>>,
-    /// Caret (or mouse) of the last paste, for the chip.
-    chip_anchor: Mutex<Option<Anchor>>,
     main_shortcut: Mutex<Option<Shortcut>>,
-    /// Alt+V, registered only while the post-paste chip is visible.
-    swap_shortcut: Mutex<Option<Shortcut>>,
-    last_paste: Mutex<Option<yank::LastPaste>>,
-    /// Bumped whenever the chip changes; pending auto-hides compare it.
-    chip_seq: AtomicU64,
     /// Last request for the manage window, read by its UI when it loads.
     manage_request: Mutex<Option<ManageRequest>>,
 }
@@ -132,7 +122,6 @@ fn show_launcher(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
-    yank::hide_chip(app);
     let state = app.state::<AppState>();
     let visible = window.is_visible().unwrap_or(false);
     let hidden_within = |limit: Duration| {
@@ -175,8 +164,7 @@ fn show_launcher(app: &AppHandle) {
         )
     };
     // By default the popover opens in the upper middle of the screen, like a
-    // launcher; with `follow_caret` it opens at the caret instead. (The
-    // post-paste chip always goes to the caret: see `caret_anchor`.)
+    // launcher; with `follow_caret` it opens at the caret instead.
     let anchor = if follow_caret {
         find_anchor(&window, (!own_foreground).then_some(foreground))
     } else {
@@ -238,13 +226,6 @@ fn center_anchor(window: &WebviewWindow, width: f64) -> Anchor {
         .unwrap_or((0, 0));
     let (work, scale) = monitor_at(window, point);
     Anchor::centered(work, scale, width)
-}
-
-/// Where the post-paste chip goes: the caret of the window that was pasted
-/// into, else the mouse pointer.
-pub(crate) fn caret_anchor(app: &AppHandle, target: platform::WindowHandle) -> Option<Anchor> {
-    let window = app.get_webview_window(MAIN_WINDOW)?;
-    Some(find_anchor(&window, (target != 0).then_some(target)))
 }
 
 /// Caret of `target` when it can be found, else the mouse pointer.
@@ -521,7 +502,7 @@ pub(crate) fn apply_language(app: &AppHandle) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), tray_menu(app)) {
         let _ = tray.set_menu(Some(menu));
     }
-    for label in [MAIN_WINDOW, CHIP_WINDOW, MANAGE_WINDOW] {
+    for label in [MAIN_WINDOW, MANAGE_WINDOW] {
         let _ = app.emit_to(label, "language", lang);
     }
 }
@@ -581,24 +562,17 @@ pub fn run() {
         ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, event| {
+                .with_handler(|app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
                     // The plugin calls this while holding its shortcut-table
-                    // lock, and register/unregister take that same lock: doing
-                    // either from here (e.g. hide_chip dropping Alt+V when the
-                    // popover opens) deadlocks the main thread. Handle the
-                    // press on another thread so the lock is released first.
+                    // lock, and register/unregister take that same lock:
+                    // doing either from here deadlocks the main thread.
+                    // Handle the press on another thread so the lock is
+                    // released first.
                     let app = app.clone();
-                    let shortcut = *shortcut;
-                    thread::spawn(move || {
-                        if yank::is_swap_hotkey(&app, &shortcut) {
-                            yank::on_swap_hotkey(&app);
-                        } else {
-                            toggle_launcher(&app);
-                        }
-                    });
+                    thread::spawn(move || toggle_launcher(&app));
                 })
                 .build(),
         )
@@ -635,11 +609,7 @@ pub fn run() {
                 hidden_at: Mutex::new(None),
                 pending: AtomicBool::new(false),
                 anchor: Mutex::new(None),
-                chip_anchor: Mutex::new(None),
                 main_shortcut: Mutex::new(None),
-                swap_shortcut: Mutex::new(None),
-                last_paste: Mutex::new(None),
-                chip_seq: AtomicU64::new(0),
                 manage_request: Mutex::new(None),
             });
 
@@ -650,9 +620,6 @@ pub fn run() {
             let handle = app.handle();
             for config in &app.config().app.windows {
                 tauri::WebviewWindowBuilder::from_config(handle, config)?.build()?;
-            }
-            if let Some(chip) = handle.get_webview_window(CHIP_WINDOW) {
-                platform::make_non_activating(native_handle(&chip));
             }
             if let Err(e) = register_hotkey(handle, &hotkey) {
                 *app.state::<AppState>().hotkey_error.lock().unwrap() = Some(e);
@@ -704,8 +671,6 @@ pub fn run() {
             commands::open_manage,
             commands::manage_request,
             commands::close_manage,
-            commands::chip_swap,
-            commands::chip_undo,
             commands::language,
         ])
         .run(tauri::generate_context!())

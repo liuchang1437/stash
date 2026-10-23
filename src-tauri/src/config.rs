@@ -30,9 +30,6 @@ pub struct Config {
     /// Switch the popover's input method to English when it opens; search
     /// matches pinyin anyway, and Shift switches back.
     pub english_input: bool,
-    /// Hotkey that swaps the text just pasted for an earlier clip while the
-    /// post-paste chip is visible. Empty disables swapping.
-    pub swap_hotkey: String,
     /// UI language: `zh`, `en`, or empty to follow the Windows display
     /// language (`i18n::resolve`).
     pub language: String,
@@ -63,7 +60,6 @@ impl Default for Config {
             follow_caret: false,
             auto_peek: true,
             english_input: true,
-            swap_hotkey: "Alt+V".into(),
             language: String::new(),
             card_width: 440,
             peek_width: 480,

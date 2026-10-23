@@ -44,11 +44,9 @@ body {
   user-select: none;
 }
 
-/* The popover and the chip are transparent windows: only their cards paint. */
+/* The popover is a transparent window: only its cards paint. */
 html[data-window="main"],
-html[data-window="main"] body,
-html[data-window="chip"],
-html[data-window="chip"] body {
+html[data-window="main"] body {
   background: transparent;
 }
 

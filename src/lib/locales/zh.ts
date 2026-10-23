@@ -130,14 +130,6 @@ const zh = {
     truncated: (n: number) => `… 只显示前 ${n.toLocaleString()} 字`,
   },
 
-  chip: {
-    releaseToSwap: (i: number, n: number) => `松开 Alt 换成 ${i}/${n}`,
-    swapped: (i: number, n: number) => `已换成 ${i}/${n}`,
-    pasted: "已粘贴",
-    swap: "换一条",
-    undo: "撤销",
-  },
-
   common: {
     close: "关闭",
     closeEsc: "关闭 (Esc)",
@@ -162,9 +154,6 @@ const zh = {
     peekWidth: "预览",
     widthHint: "默认列表 440、预览 480。列表可设 400–800，预览 320–1000，下次打开浮层时生效。",
     englishInput: "打开时切换到英文输入（搜索支持拼音，按 Shift 可切回中文）",
-    swapHotkey: "粘贴后「换一条」快捷键",
-    off: "（已关闭）",
-    swapHint: "粘贴后的几秒内按住 Alt 连按 V 选择更早的记录，松开 Alt 原地替换。只在提示条出现时生效；按 Backspace 关闭。",
     snippetsDir: "Snippets 目录",
     snippetsDirHint: "每个 snippet 是一个 .md 文件。把这个目录放进 OneDrive / 坚果云 / git 即可同步。",
     historyLimit: "剪贴板历史保留条数",

@@ -5,7 +5,6 @@ English | [简体中文](guide.zh-CN.md)
 See the [README](../README.md) for installation and a quick start. The interface is available in English and Chinese; this guide uses the English labels.
 
 - [The popover](#the-popover)
-  - [After pasting: swap or undo](#after-pasting-swap-or-undo)
 - [Calculator](#calculator)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Snippet format](#snippet-format)
@@ -34,15 +33,6 @@ The popover opens in the upper middle of the screen under the mouse, with the li
 Panels that open later never push existing ones around: the preview stays next to the list, and the action menu takes the first free slot beside the preview, beyond the preview, or on the other side of the list, covering the preview only as a last resort.
 
 To find the caret, Stash tries the Win32 caret, then MSAA (Chromium / Electron), then UI Automation (for apps like Windows Terminal that only support the basic TextPattern, it uses the selection).
-
-### After pasting: swap or undo
-
-After a paste, a small strip appears next to the pasted text (next to the mouse if the caret can't be found) for a few seconds. It doesn't take focus, so you can keep typing.
-
-- Hold `Alt` and tap `V` repeatedly: the strip steps back through earlier clips, and releasing `Alt` replaces what you just pasted with the chosen one, like Emacs yank-pop.
-- Click "Undo" on the strip to delete what was just pasted.
-
-The replacement works by selecting the pasted text with Shift+← and pasting over it; in terminals Stash uses Backspace instead. In terminals only single-line clips are offered, and text over 2000 characters is never replaced. The hotkey can be changed or turned off in the settings. It is registered only while the strip is visible, so `Alt+V` stays free the rest of the time.
 
 ## Calculator
 
@@ -154,7 +144,7 @@ Usage counts and other statistics are kept in the local database, not in the sni
 Open the settings with `Ctrl ,` or from the tray menu. You can change:
 
 - The interface language: Same as Windows (the default; Chinese for a Chinese Windows display language, English otherwise), 中文 or English
-- The launcher hotkey (default `Alt+Space`) and the swap-after-paste hotkey (default `Alt+V`; can be turned off)
+- The launcher hotkey (default `Alt+Space`)
 - Whether the popover opens next to the text caret, opens the preview automatically, and switches the input method to English
 - The width of the list and of the preview (default 440 and 480 px)
 - The snippets folder (default `Documents\Stash Snippets`)

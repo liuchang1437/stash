@@ -36,7 +36,6 @@ src-tauri/src/
   lib.rs          startup, tray, hotkeys, windows, clipboard listener, snippets folder watcher
   commands.rs     commands called by the frontend (search, paste, pin, edit, settings)
   placement.rs    popover position: upper middle of the screen, or at the caret / flipped above / clamped to the edge
-  yank.rs         post-paste strip, swap and undo
   search.rs       in-memory index: nucleo fuzzy matching + pinyin + frecency, scope / tag filters
   highlight.rs    highlight ranges for search hits (including pinyin mapped back to Chinese characters)
   calc.rs         calculator: expression parser, $N clipboard references
@@ -53,7 +52,6 @@ src/lib/
   Peek.svelte     side preview (laid out / raw text, snippet result / template)
   Rendered.svelte a snippet's rendered result, variables colored by kind (shared by preview and editor)
   ActionMenu.svelte  cascading action menu
-  Chip.svelte     post-paste strip
   Manage.svelte   settings and snippet editor window (SettingsView / SnippetEditor)
   editor.ts       snippet editor (CodeMirror): variable highlighting, errors, {{ completion
   template.ts     frontend view of the variable syntax: parsing for highlighting, insertable variables

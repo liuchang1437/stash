@@ -16,7 +16,7 @@ use crate::search::{Filter, Hit, Index, ItemRef, TagCount};
 use crate::template::{self, Field, Part, Segment};
 use crate::{
     apply_language, hide_launcher, now, platform, register_hotkey, reload_snippets, snippets,
-    watch_snippets, yank, AppState, ManageRequest, MANAGE_WINDOW,
+    watch_snippets, AppState, ManageRequest, MANAGE_WINDOW,
 };
 
 type CmdResult<T> = Result<T, String>;
@@ -224,7 +224,6 @@ fn deliver(app: &AppHandle, text: String, cursor_back: usize, paste: bool) {
             thread::sleep(Duration::from_millis(30));
             platform::send_left(cursor_back);
         }
-        yank::after_paste(&app, target, text, cursor_back, original.clone());
         if let Some(original) = original {
             // Give the target app time to read the clipboard first.
             thread::sleep(Duration::from_millis(500));
@@ -318,19 +317,6 @@ pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
 pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Settings) -> CmdResult<()> {
     let mut new = settings.config;
     new.hotkey = new.hotkey.trim().to_string();
-    new.swap_hotkey = new.swap_hotkey.trim().to_string();
-    if !new.swap_hotkey.is_empty() {
-        if new.swap_hotkey.eq_ignore_ascii_case(&new.hotkey) {
-            return Err(i18n::tr(
-                "「换一条」快捷键不能和唤起快捷键相同",
-                "The swap hotkey must be different from the launcher hotkey",
-            )
-            .into());
-        }
-        new.swap_hotkey
-            .parse::<tauri_plugin_global_shortcut::Shortcut>()
-            .map_err(|e| i18n::invalid_hotkey(&new.swap_hotkey, e))?;
-    }
     new.history_limit = new.history_limit.max(10);
     new.clamp_sizes();
     let old = state.config.read().unwrap().clone();
@@ -631,17 +617,6 @@ pub fn close_manage(app: AppHandle) {
     if let Some(window) = app.get_webview_window(MANAGE_WINDOW) {
         let _ = window.hide();
     }
-}
-
-#[tauri::command]
-pub fn chip_swap(app: AppHandle) {
-    // Off the IPC thread: swapping sleeps between key strokes.
-    thread::spawn(move || yank::swap_now(&app));
-}
-
-#[tauri::command]
-pub fn chip_undo(app: AppHandle) {
-    thread::spawn(move || yank::undo(&app));
 }
 
 #[cfg(test)]

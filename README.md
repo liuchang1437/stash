@@ -19,7 +19,6 @@ A keyboard launcher for Windows that keeps your clipboard history, your Markdown
 - **One search for everything.** `Alt+Space` opens a popover that searches clipboard history and snippets together, with a live preview beside the list.
 - **Fuzzy and pinyin matching.** Type `zb` to find 周报. Results are ranked by match quality, then by how often and how recently you used them.
 - **Pastes where you were.** Stash switches back to the previous window and pastes for you. It can restore your original clipboard afterwards.
-- **Swap after paste.** Pasted the wrong thing? Hold `Alt` and tap `V` to cycle through earlier clips in place, like Emacs yank-pop.
 - **Snippets are plain `.md` files** with variables (text, defaults, choices, dates, clipboard history, cursor position). You fill them in inside the popover and see the result as you type. Keep the folder in OneDrive or git to sync it.
 - **Calculator in the search box.** Type `(1+2)*3^2`, or `$1 + $2` to add the last two numbers you copied.
 - **Knows what you copied.** Tables, commands, identifiers, URLs and Solana addresses get matching previews and actions, such as "paste as JSON string" or "paste as Markdown table".

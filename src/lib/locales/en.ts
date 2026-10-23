@@ -120,14 +120,6 @@ const en: Messages = {
     truncated: (n) => `… showing the first ${plural(n, "char", "chars")}`,
   },
 
-  chip: {
-    releaseToSwap: (i, n) => `Release Alt for ${i}/${n}`,
-    swapped: (i, n) => `Swapped to ${i}/${n}`,
-    pasted: "Pasted",
-    swap: "Swap",
-    undo: "Undo",
-  },
-
   common: {
     close: "Close",
     closeEsc: "Close (Esc)",
@@ -152,10 +144,6 @@ const en: Messages = {
     peekWidth: "Preview",
     widthHint: "Defaults: list 440, preview 480. List 400–800, preview 320–1000. Takes effect the next time the popover opens.",
     englishInput: "Switch the input method to English when opening (search understands pinyin; Shift switches back)",
-    swapHotkey: "Swap-after-paste hotkey",
-    off: "(off)",
-    swapHint:
-      "For a few seconds after pasting, hold Alt and tap V to pick an earlier entry; releasing Alt replaces the pasted text. Only active while the strip is showing. Backspace turns it off.",
     snippetsDir: "Snippets folder",
     snippetsDirHint: "Each snippet is a .md file. Put this folder in OneDrive, Dropbox or git to sync it.",
     historyLimit: "Clipboard entries to keep",

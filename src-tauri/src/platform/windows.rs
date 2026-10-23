@@ -27,18 +27,15 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::UI::Input::Ime::{ImmGetDefaultIMEWnd, IMC_SETCONVERSIONMODE};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_LEFT, VK_MENU, VK_RIGHT, VK_SHIFT, VK_V,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+    VK_CONTROL, VK_LEFT, VK_V,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetGUIThreadInfo,
-    GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
-    RegisterClassW, SendMessageTimeoutW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, TranslateMessage, GUITHREADINFO, GWL_EXSTYLE, GWL_STYLE, HWND_MESSAGE,
-    HWND_TOPMOST, MSG, SMTO_ABORTIFHUNG, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CLIPBOARDUPDATE,
-    WM_IME_CONTROL, WNDCLASSW, WS_CAPTION, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    GetMessageW, GetWindowRect, GetWindowThreadProcessId, IsIconic, RegisterClassW,
+    SendMessageTimeoutW, SetForegroundWindow, SetWindowPos, ShowWindow, TranslateMessage,
+    GUITHREADINFO, HWND_MESSAGE, MSG, SMTO_ABORTIFHUNG, SWP_NOACTIVATE, SWP_NOZORDER,
+    SW_RESTORE, WM_CLIPBOARDUPDATE, WM_IME_CONTROL, WNDCLASSW,
 };
 
 use super::Rect;
@@ -349,33 +346,6 @@ pub fn send_left(count: usize) {
     send(&tap(VK_LEFT, count));
 }
 
-pub fn send_right(count: usize) {
-    send(&tap(VK_RIGHT, count));
-}
-
-/// Selects `count` characters to the left of the caret.
-pub fn send_shift_left(count: usize) {
-    let mut inputs = vec![key(VK_SHIFT, false)];
-    inputs.extend(tap(VK_LEFT, count));
-    inputs.push(key(VK_SHIFT, true));
-    send(&inputs);
-}
-
-pub fn send_backspace(count: usize) {
-    send(&tap(VK_BACK, count));
-}
-
-/// Taps an unassigned virtual key while Alt is held, so that releasing Alt
-/// after our Alt+V hotkey does not open the target window's menu bar.
-pub fn mask_menu_key() {
-    const VK_UNASSIGNED: VIRTUAL_KEY = 0xE8;
-    send(&tap(VK_UNASSIGNED, 1));
-}
-
-pub fn alt_down() -> bool {
-    unsafe { (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 }
-}
-
 // ---------------------------------------------------------------------------
 // Caret lookup
 
@@ -639,39 +609,6 @@ pub fn set_bounds(hwnd: WindowHandle, x: i32, y: i32, width: i32, height: i32) -
     }
 }
 
-/// Makes a window that never takes focus when shown or clicked, and stays
-/// out of Alt+Tab.
-pub fn make_non_activating(hwnd: WindowHandle) {
-    if hwnd == 0 {
-        return;
-    }
-    unsafe {
-        let hwnd = hwnd as HWND;
-        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        SetWindowLongPtrW(
-            hwnd,
-            GWL_EXSTYLE,
-            ex_style | (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize,
-        );
-        // Undecorated Tauri windows keep WS_CAPTION and hide it by handling
-        // WM_NCCALCSIZE. Once the window is a tool window shown without
-        // activation, Windows draws that caption as a small "title ×" bar,
-        // so drop every frame style and make it a plain popup.
-        let frame = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX) as isize;
-        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-        SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !frame) | WS_POPUP as isize);
-        SetWindowPos(
-            hwnd,
-            null_mut(),
-            0,
-            0,
-            0,
-            0,
-            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-        );
-    }
-}
-
 /// Switches the input method of the control that has the keyboard focus in
 /// `hwnd`'s thread to English (alphanumeric) mode. In a WebView the focus is
 /// a child window of the WebView2 process, so the request goes to that
@@ -701,36 +638,6 @@ pub fn ime_to_english(hwnd: WindowHandle) {
             SMTO_ABORTIFHUNG,
             200,
             &mut result,
-        );
-    }
-}
-
-/// Hides a window shown with `show_without_focus`. Tauri's own `hide()`
-/// is a no-op there: it still believes the window is hidden because it
-/// never saw it being shown.
-pub fn hide_window(hwnd: WindowHandle) {
-    if hwnd != 0 {
-        unsafe {
-            ShowWindow(hwnd as HWND, SW_HIDE);
-        }
-    }
-}
-
-/// Shows a window on top without activating it.
-pub fn show_without_focus(hwnd: WindowHandle) {
-    if hwnd == 0 {
-        return;
-    }
-    unsafe {
-        ShowWindow(hwnd as HWND, SW_SHOWNOACTIVATE);
-        SetWindowPos(
-            hwnd as HWND,
-            HWND_TOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
     }
 }
